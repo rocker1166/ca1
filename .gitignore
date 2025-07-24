@@ -1,3 +1,4 @@
 # Ignore Python virtual environments in backend
 backend/venv/
     backend/.env
+    backend\.env
