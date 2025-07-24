@@ -1,0 +1,10 @@
+langchain
+fastapi
+uvicorn
+pydantic
+pytest
+flake8
+langchain-google-genai
+python-pptx
+Pillow 
+pydantic-settings 
