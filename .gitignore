@@ -2,3 +2,9 @@
 backend/venv/
     backend/.env
     backend\.env
+
+    backend/tmp/
+    backend/results/
+# Ignore Python cache files
+__pycache__/
+backend/__pycache__/

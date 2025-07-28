@@ -7,4 +7,7 @@ flake8
 langchain-google-genai
 python-pptx
 Pillow 
-pydantic-settings 
+pydantic-settings
+requests
+matplotlib
+seaborn 
