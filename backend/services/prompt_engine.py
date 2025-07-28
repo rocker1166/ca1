@@ -1,6 +1,7 @@
 from core.config import settings
 from core.logger import get_logger
-from services.slide_schema import Deck
+from services.slide_schema import Deck, Slide
+from services.image_service import image_service
 from pydantic import ValidationError
 import json
 import time
@@ -50,10 +51,10 @@ class PromptEngine:
         
         Slides 2-{num_slides-1} (Content Slides):
         - type: "content"
-        - title: Clear, descriptive heading
+        - title: Clear, descriptive heading (will be used for automatic image search)
         - bullets: Array of 3-5 bullet points (for backward compatibility)
         - content: Enhanced bullet points with sub-points where appropriate
-        {"- image_url: Include relevant placeholder image URL (e.g., 'https://via.placeholder.com/400x300/0066cc/ffffff?text=Topic+Image')" if include_images else ""}
+        {"- Note: Images will be automatically added based on slide titles" if include_images else ""}
         {"- diagram_type: 'process', 'comparison', or 'hierarchy' where concepts need visual explanation" if include_diagrams else ""}
         {"- diagram_data: Relevant data for the diagram" if include_diagrams else ""}
         
@@ -63,10 +64,10 @@ class PromptEngine:
         - bullets: Summary points
         
         Guidelines for content:
-        1. Use clear, engaging headings
+        1. Use clear, engaging headings (these help with automatic image matching)
         2. Keep bullet points concise but informative
         3. Include sub-points for complex topics
-        4. Suggest relevant images for visual appeal
+        4. Make slide titles descriptive for better image search results
         5. Add diagrams for processes, comparisons, or hierarchies
         6. Ensure professional tone throughout
         
@@ -113,8 +114,10 @@ class PromptEngine:
         raise ValueError(f"Failed to generate valid slides after {self.max_retries} attempts: {last_error}")
     
     def _post_process_deck(self, deck: Deck, topic: str, include_images: bool, include_diagrams: bool) -> Deck:
-        """Post-process the deck to add enhanced features"""
+        """Post-process the deck to add enhanced features with automatic image fetching"""
         processed_slides = []
+        
+        logger.info(f"🔄 Post-processing {len(deck.slides)} slides with images: {include_images}, diagrams: {include_diagrams}")
         
         for i, slide in enumerate(deck.slides):
             # Ensure backward compatibility by copying bullets to content if content is empty
@@ -127,12 +130,16 @@ class PromptEngine:
                     for item in slide.content
                 ]
             
-            # Add sample images for certain slide types if requested
-            if include_images and i > 0 and i < len(deck.slides) - 1:  # Skip title and conclusion
+            # Add automatic image fetching for content slides
+            if include_images and slide.type == 'content' and i > 0:  # Skip title slide
                 if not slide.image_url and not slide.images:
-                    # Add placeholder image URL based on slide content
-                    topic_words = topic.replace(' ', '+')
-                    slide.image_url = f"https://via.placeholder.com/400x300/0066cc/ffffff?text={topic_words}"
+                    logger.info(f"🖼️ Getting image for slide {i+1}: '{slide.title}'")
+                    # Use Unsplash image service to get relevant image
+                    slide.image_url = image_service.get_image_url(
+                        topic=topic,
+                        slide_title=slide.title
+                    )
+                    slide.image_position = 'right'  # Default position
             
             # Add sample diagrams for process-oriented slides
             if include_diagrams and i > 0 and any(word in slide.title.lower() for word in ['process', 'steps', 'workflow', 'method']):
@@ -146,4 +153,5 @@ class PromptEngine:
             processed_slides.append(slide)
         
         deck.slides = processed_slides
+        logger.info(f"✅ Post-processing completed. {sum(1 for s in deck.slides if s.image_url)} slides have images")
         return deck

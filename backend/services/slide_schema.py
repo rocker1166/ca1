@@ -21,7 +21,7 @@ class Slide(BaseModel):
     # Enhanced features
     content: Optional[List[Union[str, BulletPoint]]] = []
     subtitle: Optional[str] = None
-    image_url: Optional[str] = None
+    image_url: Optional[str] = None  # Single image URL from Unsplash
     image_position: str = 'right'  # 'right', 'center', 'left'
     diagram_type: Optional[str] = None  # 'process', 'comparison', 'hierarchy'
     diagram_data: Optional[List[Dict[str, Any]]] = []
