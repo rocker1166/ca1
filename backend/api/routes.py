@@ -24,13 +24,13 @@ class JobStatus:
     DONE = "done"
     ERROR = "error"
 
-def job_worker(job_id, topic, use_template=True):
+def job_worker(job_id, topic, use_template=True, num_slides=8, include_images=True, include_diagrams=True):
     with jobs_lock:
         jobs[job_id]["status"] = JobStatus.RUNNING
     try:
         engine = PromptEngine()
         logger.info(f"Calling LLM for topic: {topic}")
-        deck = engine.generate_slides(topic)
+        deck = engine.generate_slides(topic, num_slides=num_slides, include_images=include_images, include_diagrams=include_diagrams)
         logger.info(f"Deck object created: {deck}")
         if not deck.slides:
             logger.error(f"Deck is empty for topic: {topic}")
@@ -55,15 +55,23 @@ async def generate_ppt(request: Request):
     topic = data.get("topic")
     use_template = data.get("use_template", True)
     sync = data.get("sync", False)
+    
+    # Enhanced options
+    num_slides = data.get("num_slides", 8)
+    include_images = data.get("include_images", True)
+    include_diagrams = data.get("include_diagrams", True)
+    theme = data.get("theme", "professional")
+    
     if not topic or not isinstance(topic, str):
         logger.error(f"Invalid topic received: {topic}")
         raise HTTPException(status_code=400, detail="Missing or invalid 'topic'")
+    
     if sync:
         # Synchronous processing for debugging
         try:
             engine = PromptEngine()
             logger.info(f"Calling LLM for topic: {topic}")
-            deck = engine.generate_slides(topic)
+            deck = engine.generate_slides(topic, num_slides=num_slides, include_images=include_images, include_diagrams=include_diagrams)
             logger.info(f"Deck object created: {deck}")
             if not deck.slides:
                 logger.error(f"Deck is empty for topic: {topic}")
@@ -85,12 +93,16 @@ async def generate_ppt(request: Request):
             "status": JobStatus.PENDING,
             "error": None,
             "url": None,
-            "use_template": use_template
+            "use_template": use_template,
+            "num_slides": num_slides,
+            "include_images": include_images,
+            "include_diagrams": include_diagrams,
+            "theme": theme
         }
         with jobs_lock:
             jobs[job_id] = {"status": JobStatus.PENDING, "result": None, "url": None, "error": None}
-        threading.Thread(target=job_worker, args=(job_id, topic, use_template), daemon=True).start()
-        logger.info(f"Enqueued job {job_id} for topic '{topic}' (use_template={use_template})")
+        threading.Thread(target=job_worker, args=(job_id, topic, use_template, num_slides, include_images, include_diagrams), daemon=True).start()
+        logger.info(f"Enqueued job {job_id} for topic '{topic}' (use_template={use_template}, num_slides={num_slides})")
         return {
             "job_id": job_id,
             "topic": topic,
