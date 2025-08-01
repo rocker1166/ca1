@@ -3,10 +3,12 @@ import uuid
 import requests
 from pptx import Presentation
 from pptx.util import Pt, Inches
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.dml.color import RGBColor
 from services.slide_schema import Deck, Slide, BulletPoint
+from services.layout_intelligence import LayoutIntelligence
+from services.theme_manager import ThemeManager
 from core.logger import get_logger
 from io import BytesIO
 from PIL import Image
@@ -95,11 +97,26 @@ class DiagramLayout(BaseLayout):
         if slide_data.notes:
             pptx_slide.notes_slide.notes_text_frame.text = slide_data.notes
 
+# Import academic layouts
+from services.academic_layouts import (
+    EquationLayout, CodeLayout, TaxonomyLayout,
+    TextDenseLayout, TextSparseLayout, ConclusionLayout
+)
+
 # Layout registry
 LAYOUT_REGISTRY = {
+    # Basic layouts
     "title_bullets": TitleBulletsLayout(),
     "image": ImageLayout(),
     "diagram": DiagramLayout(),
+    
+    # Academic layouts
+    "equation": EquationLayout(),
+    "code": CodeLayout(),
+    "taxonomy": TaxonomyLayout(),
+    "text_dense": TextDenseLayout(),
+    "text_sparse": TextSparseLayout(),
+    "conclusion": ConclusionLayout()
 }
 
 def get_layout(slide_data: Slide):
@@ -112,20 +129,37 @@ def get_layout(slide_data: Slide):
     return LAYOUT_REGISTRY["title_bullets"]
 
 class PPTBuilder:
-    def __init__(self, template_path: str = TEMPLATE_PATH):
+    def __init__(self, template_path: str = TEMPLATE_PATH, theme: str = "professional"):
         self.template_path = template_path
-        # Enhanced color scheme
+        
+        # Get theme colors from ThemeManager
+        theme_data = ThemeManager.get_theme_colors(theme)
         self.colors = {
-            'primary': RGBColor(44, 62, 80),      # Dark blue
-            'secondary': RGBColor(52, 152, 219),   # Light blue
-            'accent': RGBColor(231, 76, 60),       # Red
-            'text': RGBColor(44, 62, 80),          # Dark gray
-            'light_text': RGBColor(127, 140, 141)  # Light gray
+            'primary': theme_data['primary'],
+            'secondary': theme_data['secondary'],
+            'accent': theme_data['accent'],
+            'background': theme_data['background'],
+            'text': theme_data['text'],
+            'light_text': RGBColor(127, 140, 141)  # Light gray (keeping for backward compatibility)
+        }
+        self.fonts = {
+            'title': theme_data['title_font'],
+            'body': theme_data['body_font']
         }
 
     def build(self, deck: Deck, use_template: bool = True) -> str:
         try:
             logger.info(f"Building PPTX. use_template={use_template}, slides={len(deck.slides)}")
+            
+            # Apply intelligent layout selection
+            layout_engine = LayoutIntelligence()
+            deck = layout_engine.determine_optimal_layouts(deck)
+            logger.info(f"Applied intelligent layout selection to deck")
+            
+            # Pre-process slides to handle content overflow
+            processed_deck = self._preprocess_slides_for_overflow(deck)
+            logger.info(f"Pre-processed slides to handle overflow. Original slides: {len(deck.slides)}, Processed slides: {len(processed_deck.slides)}")
+            
             if use_template:
                 if not os.path.exists(self.template_path):
                     raise FileNotFoundError(f"PPTX template not found: {self.template_path}")
@@ -138,8 +172,8 @@ class PPTBuilder:
             for i in range(slide_count - 1, -1, -1):
                 self._delete_slide(prs, i)
             
-            for i, slide_data in enumerate(deck.slides):
-                logger.info(f"Processing slide {i+1}: {slide_data.title}")
+            for i, slide_data in enumerate(processed_deck.slides):
+                logger.info(f"Processing slide {i+1}: {slide_data.title} (type: {slide_data.type})")
                 self._create_enhanced_slide(prs, slide_data)
             
             file_path = os.path.join(RESULTS_DIR, f"{uuid.uuid4()}.pptx")
@@ -149,6 +183,86 @@ class PPTBuilder:
         except Exception as e:
             logger.error(f"Failed to build PPTX: {e}")
             raise
+            
+    def _preprocess_slides_for_overflow(self, deck: Deck) -> Deck:
+        """Pre-process slides to handle content overflow by splitting extremely content-heavy slides"""
+        from copy import deepcopy
+        
+        processed_deck = deepcopy(deck)
+        new_slides = []
+        
+        # Analyze each slide for potential overflow
+        for i, slide in enumerate(processed_deck.slides):
+            # Skip title slide
+            if i == 0 or slide.type == "title":
+                new_slides.append(slide)
+                continue
+                
+            # Check if slide has excessive content
+            needs_splitting = False
+            content_length = 0
+            bullet_count = 0
+            
+            if slide.content:
+                bullet_count = len(slide.content)
+                for point in slide.content:
+                    if hasattr(point, 'text'):
+                        content_length += len(point.text)
+                        if hasattr(point, 'sub_points') and point.sub_points:
+                            bullet_count += len(point.sub_points)
+                            for sub in point.sub_points:
+                                content_length += len(str(sub))
+                    else:
+                        content_length += len(str(point))
+            elif slide.bullets:
+                bullet_count = len(slide.bullets)
+                content_length = sum(len(bullet) for bullet in slide.bullets)
+            
+            # Determine if slide needs splitting
+            needs_splitting = (content_length > 800 or bullet_count > 9)
+            
+            if needs_splitting and (slide.content or slide.bullets):
+                logger.info(f"Splitting content-heavy slide: {slide.title} ({content_length} chars, {bullet_count} bullets)")
+                
+                # Create split slides
+                if slide.content:
+                    # Split complex content
+                    midpoint = len(slide.content) // 2
+                    
+                    # First part
+                    first_slide = deepcopy(slide)
+                    first_slide.content = slide.content[:midpoint]
+                    first_slide.title = slide.title
+                    new_slides.append(first_slide)
+                    
+                    # Second part
+                    second_slide = deepcopy(slide)
+                    second_slide.content = slide.content[midpoint:]
+                    second_slide.title = f"{slide.title} (continued)"
+                    new_slides.append(second_slide)
+                    
+                elif slide.bullets:
+                    # Split simple bullets
+                    midpoint = len(slide.bullets) // 2
+                    
+                    # First part
+                    first_slide = deepcopy(slide)
+                    first_slide.bullets = slide.bullets[:midpoint]
+                    first_slide.title = slide.title
+                    new_slides.append(first_slide)
+                    
+                    # Second part
+                    second_slide = deepcopy(slide)
+                    second_slide.bullets = slide.bullets[midpoint:]
+                    second_slide.title = f"{slide.title} (continued)"
+                    new_slides.append(second_slide)
+            else:
+                # No need to split
+                new_slides.append(slide)
+        
+        # Update deck with new slide sequence
+        processed_deck.slides = new_slides
+        return processed_deck
     
     def _delete_slide(self, prs, slide_index):
         """Delete slide by index"""
@@ -223,38 +337,88 @@ class PPTBuilder:
             slide.notes_slide.notes_text_frame.text = slide_data.notes
     
     def _create_text_only_layout(self, slide, slide_data: Slide):
-        """Create layout with text content only"""
+        """Create layout with text content only and overflow protection"""
         # Use full content area for text
         content_placeholder = slide.placeholders[1] if len(slide.placeholders) > 1 else None
         
         if content_placeholder:
-            # Adjust content area to use full width
+            # Adjust content area to use full width with margins to prevent edge overflow
             content_placeholder.left = Inches(0.5)
             content_placeholder.width = Inches(9)
             content_placeholder.top = Inches(1.5)
             content_placeholder.height = Inches(5)
             
-            if slide_data.content:
-                self._add_enhanced_bullet_points(content_placeholder, slide_data.content)
+            # Apply overflow protection based on content density
+            is_dense = self._is_content_dense(slide_data)
+            
+            if is_dense:
+                # For very dense content, create a text box with more control over overflow
+                self._create_overflow_safe_textbox(slide, slide_data)
             else:
-                self._add_simple_bullet_points(content_placeholder, slide_data.bullets)
+                # Normal content handling with auto-fit protection
+                if slide_data.content:
+                    self._add_enhanced_bullet_points(content_placeholder, slide_data.content)
+                else:
+                    self._add_simple_bullet_points(content_placeholder, slide_data.bullets)
     
     def _create_image_content_layout(self, slide, slide_data: Slide):
-        """Create layout with image and text side by side"""
+        """Create layout with image and text side by side with overflow protection"""
         # Adjust content area for text (left side)
         content_placeholder = slide.placeholders[1] if len(slide.placeholders) > 1 else None
         
         if content_placeholder:
-            # Resize content area to left side
+            # Resize content area to left side with safe margins
             content_placeholder.left = Inches(0.5)
-            content_placeholder.width = Inches(4.5)
+            content_placeholder.width = Inches(4.3)  # Slightly narrower to ensure margin
             content_placeholder.top = Inches(1.5)
             content_placeholder.height = Inches(5)
             
-            if slide_data.content:
-                self._add_enhanced_bullet_points(content_placeholder, slide_data.content)
+            # Check if content is very dense
+            is_dense = self._is_content_dense(slide_data)
+            
+            if is_dense:
+                # Create a custom text box for better overflow control
+                txBox = slide.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(4.3), Inches(5))
+                tf = txBox.text_frame
+                tf.word_wrap = True
+                tf.auto_size = 1  # Auto-fit text to shape
+                
+                # Use more aggressive content truncation
+                if slide_data.content:
+                    max_points = min(5, len(slide_data.content))
+                    for i, point in enumerate(slide_data.content[:max_points]):
+                        if i == 0:
+                            p = tf.paragraphs[0]
+                        else:
+                            p = tf.add_paragraph()
+                            
+                        # Extract text with stricter length limits
+                        if hasattr(point, 'text'):
+                            text = point.text[:120] + "..." if len(point.text) > 120 else point.text
+                        else:
+                            text = str(point)[:120] + "..." if len(str(point)) > 120 else str(point)
+                        
+                        p.text = text
+                        p.font.size = Pt(14)  # Smaller font for side-by-side with image
+                else:
+                    # Handle simple bullets with truncation
+                    max_bullets = min(6, len(slide_data.bullets or []))
+                    bullets = slide_data.bullets or []
+                    for i, bullet in enumerate(bullets[:max_bullets]):
+                        if i == 0:
+                            p = tf.paragraphs[0]
+                        else:
+                            p = tf.add_paragraph()
+                        
+                        bullet_text = str(bullet)[:120] + "..." if len(str(bullet)) > 120 else str(bullet)
+                        p.text = bullet_text
+                        p.font.size = Pt(14)
             else:
-                self._add_simple_bullet_points(content_placeholder, slide_data.bullets)
+                # Normal content handling with existing methods
+                if slide_data.content:
+                    self._add_enhanced_bullet_points(content_placeholder, slide_data.content)
+                else:
+                    self._add_simple_bullet_points(content_placeholder, slide_data.bullets)
         
         # Add image to right side
         image_url = slide_data.image_url or (slide_data.images[0] if slide_data.images else None)
@@ -315,18 +479,31 @@ class PPTBuilder:
         self._create_content_slide(prs, slide_data)  # Same as content slide
     
     def _format_title(self, title_shape):
-        """Format slide title"""
-        title_paragraph = title_shape.text_frame.paragraphs[0]
-        title_paragraph.font.size = Pt(36)
+        """Format slide title with auto-fit to ensure text stays within bounds"""
+        # Enable auto-fit to prevent overflow
+        text_frame = title_shape.text_frame
+        text_frame.word_wrap = True
+        text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        
+        # Apply formatting to paragraph
+        title_paragraph = text_frame.paragraphs[0]
+        title_paragraph.font.size = Pt(36)  # Initial size, will auto-decrease if needed
         title_paragraph.font.bold = True
         title_paragraph.font.color.rgb = self.colors['primary']
     
     def _add_enhanced_bullet_points(self, content_shape, bullet_points):
-        """Add formatted bullet points with enhanced structure"""
+        """Add formatted bullet points with enhanced structure and text overflow prevention"""
         text_frame = content_shape.text_frame
         text_frame.clear()
         
-        for i, point in enumerate(bullet_points):
+        # Configure text frame to prevent overflow
+        text_frame.word_wrap = True
+        text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        
+        # Calculate how many points we can fit safely
+        max_points = min(7, len(bullet_points))  # Limit total points if excessive
+        
+        for i, point in enumerate(bullet_points[:max_points]):
             if isinstance(point, dict):
                 # Handle BulletPoint structure
                 main_text = point.get('text', str(point))
@@ -342,6 +519,10 @@ class PPTBuilder:
                 sub_points = []
                 level = 0
             
+            # Ensure text doesn't overflow
+            if len(main_text) > 200:  # Truncate extremely long bullet points
+                main_text = main_text[:197] + "..."
+                
             # Add main bullet point
             if i == 0:
                 p = text_frame.paragraphs[0]
@@ -352,17 +533,35 @@ class PPTBuilder:
             p.level = level
             self._format_bullet_point(p, level)
             
+            # Limit sub-points if there are too many
+            max_sub_points = min(3, len(sub_points))  # Limit sub-points per point
+            
             # Add sub-points
-            for sub_point in sub_points:
+            for j, sub_point in enumerate(sub_points[:max_sub_points]):
+                sub_text = str(sub_point)
+                if len(sub_text) > 150:  # Truncate long sub-points
+                    sub_text = sub_text[:147] + "..."
+                
                 sub_p = text_frame.add_paragraph()
-                sub_p.text = str(sub_point)
+                sub_p.text = sub_text
                 sub_p.level = level + 1
                 self._format_bullet_point(sub_p, level + 1)
+                
+        # Add ellipsis if we truncated the list
+        if len(bullet_points) > max_points:
+            p = text_frame.add_paragraph()
+            p.text = "..."
+            p.level = 0
+            self._format_bullet_point(p, 0)
     
     def _add_simple_bullet_points(self, content_shape, bullets):
-        """Add simple bullet points for backward compatibility"""
+        """Add simple bullet points with auto-fit to prevent text overflow"""
         text_frame = content_shape.text_frame
         text_frame.clear()
+        
+        # Configure text frame to prevent overflow
+        text_frame.word_wrap = True
+        text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
         
         for i, bullet in enumerate(bullets):
             if i == 0:
@@ -370,21 +569,156 @@ class PPTBuilder:
             else:
                 p = text_frame.add_paragraph()
             
-            p.text = str(bullet)
+            # Ensure text doesn't overflow by setting max length if extremely long
+            bullet_text = str(bullet)
+            if len(bullet_text) > 300:  # Extremely long text might still cause issues
+                bullet_text = bullet_text[:297] + "..."
+                
+            p.text = bullet_text
             p.level = 0
             self._format_bullet_point(p, 0)
     
     def _format_bullet_point(self, paragraph, level=0):
-        """Format individual bullet point"""
-        font_sizes = [20, 18, 16]  # Different sizes for different levels
+        """Format individual bullet point with adaptive sizing"""
+        # Base font sizes for different levels
+        base_font_sizes = [20, 18, 16]  # Different sizes for different levels
         colors = [self.colors['text'], self.colors['light_text'], self.colors['light_text']]
         
-        paragraph.font.size = Pt(font_sizes[min(level, 2)])
+        # Adjust font size based on text length for better fitting
+        text_length = len(paragraph.text)
+        
+        # Calculate adaptive font size (reduce for longer text)
+        level_idx = min(level, len(base_font_sizes) - 1)
+        base_size = base_font_sizes[level_idx]
+        
+        # Adaptive sizing based on content length
+        if text_length > 150:
+            font_size = max(base_size - 4, 12)  # Minimum 12pt
+        elif text_length > 100:
+            font_size = max(base_size - 2, 14)  # Minimum 14pt
+        else:
+            font_size = base_size
+            
+        # Enable word wrap for the paragraph
+        paragraph.alignment = PP_ALIGN.LEFT
+        
+        paragraph.font.size = Pt(font_size)  # Use our calculated adaptive font size
         paragraph.font.color.rgb = colors[min(level, 2)]
         
         # Bold for main points
         if level == 0:
             paragraph.font.bold = True
+    
+    def _is_content_dense(self, slide_data: Slide) -> bool:
+        """Determine if slide content is very dense and needs special handling"""
+        # Calculate total text length
+        total_length = len(slide_data.title)
+        
+        if slide_data.content:
+            for point in slide_data.content:
+                if hasattr(point, 'text'):
+                    total_length += len(point.text)
+                    if hasattr(point, 'sub_points') and point.sub_points:
+                        for sub in point.sub_points:
+                            total_length += len(str(sub))
+                else:
+                    total_length += len(str(point))
+        elif slide_data.bullets:
+            total_length += sum(len(bullet) for bullet in slide_data.bullets)
+        
+        # Dense threshold - more than 500 chars is considered very dense
+        return total_length > 500 or (slide_data.content and len(slide_data.content) > 8)
+    
+    def _create_overflow_safe_textbox(self, slide, slide_data: Slide):
+        """Create a custom text box that ensures content never overflows slide boundaries"""
+        from pptx.util import Pt, Inches
+        
+        # Create a custom text box with strict boundaries
+        left = Inches(0.5)
+        top = Inches(1.5)
+        width = Inches(9)
+        height = Inches(5)
+        
+        txBox = slide.shapes.add_textbox(left, top, width, height)
+        tf = txBox.text_frame
+        tf.word_wrap = True
+        tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        tf.margin_left = 0
+        tf.margin_right = 0
+        tf.margin_top = 0
+        tf.margin_bottom = 0
+        
+        logger.info(f"Creating overflow-safe text box for dense content")
+        
+        # Add content with tight formatting
+        if slide_data.content:
+            # Use more aggressive truncation for dense slides
+            max_points = min(6, len(slide_data.content))
+            for i, point in enumerate(slide_data.content[:max_points]):
+                if i == 0:
+                    p = tf.paragraphs[0]
+                else:
+                    p = tf.add_paragraph()
+                
+                # Extract point text with strict length limits
+                if hasattr(point, 'text'):
+                    point_text = point.text[:150] + "..." if len(point.text) > 150 else point.text
+                else:
+                    point_text = str(point)[:150] + "..." if len(str(point)) > 150 else str(point)
+                    
+                p.text = point_text
+                p.level = 0
+                
+                # Apply compact formatting
+                font = p.font
+                font.size = Pt(16)  # Smaller font for dense slides
+                font.bold = True
+                
+                # Handle sub-points more aggressively for dense slides
+                if hasattr(point, 'sub_points') and point.sub_points:
+                    # Limit to 2 sub-points for dense slides
+                    max_sub = min(2, len(point.sub_points))
+                    for j, sub in enumerate(point.sub_points[:max_sub]):
+                        sub_p = tf.add_paragraph()
+                        sub_text = str(sub)[:100] + "..." if len(str(sub)) > 100 else str(sub)
+                        sub_p.text = sub_text
+                        sub_p.level = 1
+                        
+                        # Apply compact formatting for sub-points
+                        sub_font = sub_p.font
+                        sub_font.size = Pt(14)
+                        sub_font.bold = False
+            
+            # Add ellipsis if content was truncated
+            if len(slide_data.content) > max_points:
+                p = tf.add_paragraph()
+                p.text = "(Additional content has been condensed)"
+                p.font.italic = True
+                p.font.size = Pt(12)
+        
+        elif slide_data.bullets:
+            # Process simple bullets with strict truncation
+            max_bullets = min(8, len(slide_data.bullets))
+            for i, bullet in enumerate(slide_data.bullets[:max_bullets]):
+                if i == 0:
+                    p = tf.paragraphs[0]
+                else:
+                    p = tf.add_paragraph()
+                
+                # Truncate long bullets
+                bullet_text = str(bullet)[:150] + "..." if len(str(bullet)) > 150 else str(bullet)
+                p.text = bullet_text
+                
+                # Apply compact formatting
+                font = p.font
+                font.size = Pt(16)
+            
+            # Add ellipsis if bullets were truncated
+            if len(slide_data.bullets) > max_bullets:
+                p = tf.add_paragraph()
+                p.text = "(Additional bullets have been condensed)"
+                p.font.italic = True
+                p.font.size = Pt(12)
     
     def _add_image_to_slide(self, slide, image_url, position='right'):
         """Add image to slide with proper positioning"""

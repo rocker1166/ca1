@@ -7,6 +7,9 @@ This backend powers an AI-driven slide deck generator. It exposes a REST API to 
 - Asynchronous job queue for slide generation
 - Google Gemini LLM integration (via LangChain)
 - Dynamic slide layouts (text, images, diagrams)
+- **Intelligent layout selection** based on content analysis
+- Subject-specific slide layouts (equations, code, taxonomy)
+- Theme management with subject-appropriate styles
 - PPTX generation using python-pptx
 - Download endpoint for generated files
 - Configurable via environment variables
@@ -53,6 +56,9 @@ source venv/bin/activate
 ### 4. Install Dependencies
 ```sh
 pip install -r requirements.txt
+
+# Set up NLTK resources for intelligent layout selection
+python setup_nltk.py
 ```
 
 ### 5. Configure Environment Variables
@@ -89,7 +95,19 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### 7. API Endpoints
-- `POST /generate` — Start slide deck generation. Body: `{ "topic": "Your topic" }`
+- `POST /generate` — Start slide deck generation. 
+  - Body: 
+  ```json
+  {
+    "topic": "Your topic",
+    "use_template": true,
+    "theme": "professional",  // Options: professional, academic, science, humanities, engineering, creative
+    "num_slides": 8,
+    "include_images": true,
+    "include_diagrams": true,
+    "sync": false
+  }
+  ```
 - `GET /status/{job_id}` — Check job status. Returns status and download URL if ready.
 - `GET /download/{filename}` — Download generated PPTX file.
 - `GET /health` — Health check.
@@ -109,6 +127,9 @@ flake8
 - **services/prompt_engine.py**: Handles prompt construction and LLM calls.
 - **services/ppt_builder.py**: Builds PPTX files from slide data.
 - **services/slide_schema.py**: Pydantic models for slides and decks.
+- **services/layout_intelligence.py**: Analyzes content to determine optimal slide layouts.
+- **services/academic_layouts.py**: Specialized layouts for academic content (equations, code, etc.).
+- **services/theme_manager.py**: Manages presentation themes and color schemes.
 - **core/config.py**: Loads settings from `.env` or environment.
 - **core/logger.py**: JSON logging setup.
 - **utils/file_manager.py**: Handles temp file storage and cleanup.

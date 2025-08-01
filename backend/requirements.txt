@@ -11,4 +11,5 @@ pydantic-settings
 requests
 matplotlib
 seaborn
-python-dotenv 
+python-dotenv
+nltk

@@ -24,7 +24,7 @@ class JobStatus:
     DONE = "done"
     ERROR = "error"
 
-def job_worker(job_id, topic, use_template=True, num_slides=8, include_images=True, include_diagrams=True):
+def job_worker(job_id, topic, use_template=True, num_slides=8, include_images=True, include_diagrams=True, theme="professional"):
     with jobs_lock:
         jobs[job_id]["status"] = JobStatus.RUNNING
     try:
@@ -34,7 +34,8 @@ def job_worker(job_id, topic, use_template=True, num_slides=8, include_images=Tr
         logger.info(f"Deck object created: {deck}")
         if not deck.slides:
             logger.error(f"Deck is empty for topic: {topic}")
-        builder = PPTBuilder()
+        # Pass theme to PPTBuilder
+        builder = PPTBuilder(theme=theme)
         pptx_path = builder.build(deck, use_template=use_template)
         logger.info(f"PPTX built at: {pptx_path}")
         with jobs_lock:
@@ -75,7 +76,7 @@ async def generate_ppt(request: Request):
             logger.info(f"Deck object created: {deck}")
             if not deck.slides:
                 logger.error(f"Deck is empty for topic: {topic}")
-            builder = PPTBuilder()
+            builder = PPTBuilder(theme=theme)
             pptx_path = builder.build(deck, use_template=use_template)
             logger.info(f"PPTX built at: {pptx_path}")
             cleanup_file(pptx_path, settings.temp_file_lifetime)
