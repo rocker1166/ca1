@@ -143,9 +143,17 @@ class PPTBuilder:
             'body': theme_data['body_font']
         }
 
-    def build(self, deck: Deck, use_template: bool = True) -> BytesIO:
+    def build(self, deck: Deck, use_template: bool = True, job_id: str = None) -> BytesIO:
         try:
             logger.info(f"Building PPTX. use_template={use_template}, slides={len(deck.slides)}")
+            
+            # Emit streaming event if job_id provided
+            if job_id:
+                from services.streaming_service import streaming_service
+                streaming_service.emit_event(job_id, "layout_processing", {
+                    "message": "Applying intelligent layout selection...",
+                    "step": "layout_analysis"
+                })
             
             # Apply intelligent layout selection
             layout_engine = LayoutIntelligence()
@@ -155,6 +163,13 @@ class PPTBuilder:
             # Pre-process slides to handle content overflow
             processed_deck = self._preprocess_slides_for_overflow(deck)
             logger.info(f"Pre-processed slides to handle overflow. Original slides: {len(deck.slides)}, Processed slides: {len(processed_deck.slides)}")
+            
+            if job_id:
+                streaming_service.emit_event(job_id, "slides_processing", {
+                    "message": f"Processing {len(processed_deck.slides)} slides...",
+                    "total_slides": len(processed_deck.slides),
+                    "step": "slide_processing"
+                })
             
             if use_template:
                 if not os.path.exists(self.template_path):
@@ -170,7 +185,25 @@ class PPTBuilder:
             
             for i, slide_data in enumerate(processed_deck.slides):
                 logger.info(f"Processing slide {i+1}: {slide_data.title} (type: {slide_data.type})")
+                
+                # Emit progress for each slide
+                if job_id:
+                    streaming_service.emit_event(job_id, "slide_progress", {
+                        "message": f"Creating slide {i+1}: {slide_data.title}",
+                        "slide_number": i + 1,
+                        "slide_title": slide_data.title,
+                        "slide_type": slide_data.type,
+                        "progress": round((i + 1) / len(processed_deck.slides) * 100, 1),
+                        "step": "slide_creation"
+                    })
+                
                 self._create_enhanced_slide(prs, slide_data)
+            
+            if job_id:
+                streaming_service.emit_event(job_id, "finalizing", {
+                    "message": "Finalizing presentation...",
+                    "step": "finalization"
+                })
             
             # Save to BytesIO instead of local file
             pptx_stream = BytesIO()
