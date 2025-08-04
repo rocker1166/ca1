@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     unsplash_access_key: Optional[str] = None
     unsplash_secret_key: Optional[str] = None
     
+    # GoFile.io API settings
+    gofile_api_token: Optional[str] = None
+    gofile_folder_id: Optional[str] = None
+    gofile_enabled: bool = True
+    
     # Image settings
     default_image_size: str = "800x600"
     enable_images: bool = True

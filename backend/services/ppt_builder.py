@@ -204,19 +204,25 @@ class PPTBuilder:
             bullet_count = 0
             
             if slide.content:
-                bullet_count = len(slide.content)
+                bullet_count = len(slide.content) if isinstance(slide.content, list) else 0
                 for point in slide.content:
                     if hasattr(point, 'text'):
-                        content_length += len(point.text)
-                        if hasattr(point, 'sub_points') and point.sub_points:
+                        if hasattr(point.text, '__len__'):
+                            content_length += len(point.text)
+                        else:
+                            content_length += len(str(point.text))
+                        if hasattr(point, 'sub_points') and point.sub_points and isinstance(point.sub_points, list):
                             bullet_count += len(point.sub_points)
                             for sub in point.sub_points:
                                 content_length += len(str(sub))
                     else:
                         content_length += len(str(point))
             elif slide.bullets:
-                bullet_count = len(slide.bullets)
-                content_length = sum(len(bullet) for bullet in slide.bullets)
+                bullet_count = len(slide.bullets) if isinstance(slide.bullets, list) else 0
+                if isinstance(slide.bullets, list):
+                    content_length = sum(len(str(bullet)) for bullet in slide.bullets)
+                else:
+                    content_length = 0
             
             # Determine if slide needs splitting
             needs_splitting = (content_length > 800 or bullet_count > 9)
@@ -225,7 +231,7 @@ class PPTBuilder:
                 logger.info(f"Splitting content-heavy slide: {slide.title} ({content_length} chars, {bullet_count} bullets)")
                 
                 # Create split slides
-                if slide.content:
+                if slide.content and isinstance(slide.content, list):
                     # Split complex content
                     midpoint = len(slide.content) // 2
                     
@@ -241,7 +247,7 @@ class PPTBuilder:
                     second_slide.title = f"{slide.title} (continued)"
                     new_slides.append(second_slide)
                     
-                elif slide.bullets:
+                elif slide.bullets and isinstance(slide.bullets, list):
                     # Split simple bullets
                     midpoint = len(slide.bullets) // 2
                     
@@ -394,7 +400,11 @@ class PPTBuilder:
                             
                         # Extract text with stricter length limits
                         if hasattr(point, 'text'):
-                            text = point.text[:120] + "..." if len(point.text) > 120 else point.text
+                            # Add safety check for point.text being string-like
+                            if hasattr(point.text, '__len__'):
+                                text = point.text[:120] + "..." if len(point.text) > 120 else point.text
+                            else:
+                                text = str(point.text)
                         else:
                             text = str(point)[:120] + "..." if len(str(point)) > 120 else str(point)
                         
@@ -617,7 +627,10 @@ class PPTBuilder:
         if slide_data.content:
             for point in slide_data.content:
                 if hasattr(point, 'text'):
-                    total_length += len(point.text)
+                    if hasattr(point.text, '__len__'):
+                        total_length += len(point.text)
+                    else:
+                        total_length += len(str(point.text))
                     if hasattr(point, 'sub_points') and point.sub_points:
                         for sub in point.sub_points:
                             total_length += len(str(sub))
@@ -662,7 +675,10 @@ class PPTBuilder:
                 
                 # Extract point text with strict length limits
                 if hasattr(point, 'text'):
-                    point_text = point.text[:150] + "..." if len(point.text) > 150 else point.text
+                    if hasattr(point.text, '__len__'):
+                        point_text = point.text[:150] + "..." if len(point.text) > 150 else point.text
+                    else:
+                        point_text = str(point.text)
                 else:
                     point_text = str(point)[:150] + "..." if len(str(point)) > 150 else str(point)
                     

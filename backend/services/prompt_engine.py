@@ -145,9 +145,15 @@ class PromptEngine:
             if include_diagrams and i > 0 and any(word in slide.title.lower() for word in ['process', 'steps', 'workflow', 'method']):
                 if not slide.diagram_type:
                     slide.diagram_type = 'process'
+                    # Safely get bullet count with proper type checking
+                    bullet_count = 0
+                    if slide.bullets and isinstance(slide.bullets, list):
+                        bullet_count = len(slide.bullets)
+                    elif slide.content and isinstance(slide.content, list):
+                        bullet_count = len(slide.content)
                     slide.diagram_data = [
                         {'step': f'Step {j+1}', 'description': f'Process step {j+1}'} 
-                        for j in range(min(4, len(slide.bullets)))
+                        for j in range(min(4, max(1, bullet_count)))
                     ]
             
             processed_slides.append(slide)

@@ -528,14 +528,14 @@ class TextDenseLayout:
             for item in slide_data.content:
                 p = tf.add_paragraph()
                 if hasattr(item, 'text'):
-                    p.text = item.text
+                    p.text = str(item.text)  # Ensure string conversion
                     p.level = item.level if hasattr(item, 'level') else 0
                     
                     # Add sub-points if available
                     if hasattr(item, 'sub_points') and item.sub_points:
                         for sub in item.sub_points:
                             sub_p = tf.add_paragraph()
-                            sub_p.text = sub
+                            sub_p.text = str(sub)  # Ensure string conversion
                             sub_p.level = p.level + 1
                             sub_p.font.size = Pt(14)  # Even smaller for sub-points
                 else:
@@ -582,7 +582,7 @@ class TextSparseLayout:
             for item in slide_data.content:
                 p = tf.add_paragraph()
                 if hasattr(item, 'text'):
-                    p.text = item.text
+                    p.text = str(item.text)  # Ensure string conversion
                 else:
                     p.text = str(item)
                 p.font.size = Pt(28)  # Larger font
@@ -635,15 +635,15 @@ class ConclusionLayout:
         if slide_data.bullets:
             for bullet in slide_data.bullets:
                 p = tf.add_paragraph()
-                p.text = "• " + bullet
+                p.text = "• " + str(bullet)  # Ensure string conversion
                 p.font.size = Pt(20)
                 p.space_after = Pt(12)  # Add space between points
                 
         elif slide_data.content:
             for item in slide_data.content:
                 p = tf.add_paragraph()
-                if hasattr(item, 'text'):
-                    p.text = "• " + item.text
+                if hasattr(item, 'text') and hasattr(item.text, '__len__'):
+                    p.text = "• " + str(item.text)
                 else:
                     p.text = "• " + str(item)
                 p.font.size = Pt(20)
