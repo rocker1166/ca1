@@ -374,97 +374,102 @@ class PPTBuilder:
             slide.notes_slide.notes_text_frame.text = slide_data.notes
     
     def _create_text_only_layout(self, slide, slide_data: Slide):
-        """Create layout with text content only and overflow protection"""
-        # Use full content area for text
+        """Create enhanced layout with adaptive text content and optimal spacing"""
+        # Calculate optimal layout based on content characteristics
+        text_density = self._calculate_text_density(slide_data)
+        
+        # Adaptive content area sizing
+        if text_density > 0.8:  # Very dense content
+            left, width = Inches(0.3), Inches(9.4)
+            top, height = Inches(1.3), Inches(5.4)
+        elif text_density > 0.5:  # Dense content
+            left, width = Inches(0.4), Inches(9.2)
+            top, height = Inches(1.4), Inches(5.2)
+        else:  # Normal content
+            left, width = Inches(0.5), Inches(9.0)
+            top, height = Inches(1.5), Inches(5.0)
+        
         content_placeholder = slide.placeholders[1] if len(slide.placeholders) > 1 else None
         
         if content_placeholder:
-            # Adjust content area to use full width with margins to prevent edge overflow
-            content_placeholder.left = Inches(0.5)
-            content_placeholder.width = Inches(9)
-            content_placeholder.top = Inches(1.5)
-            content_placeholder.height = Inches(5)
+            # Configure content area with adaptive dimensions
+            content_placeholder.left = left
+            content_placeholder.width = width
+            content_placeholder.top = top
+            content_placeholder.height = height
             
-            # Apply overflow protection based on content density
-            is_dense = self._is_content_dense(slide_data)
-            
-            if is_dense:
-                # For very dense content, create a text box with more control over overflow
+            # Enhanced content handling based on density
+            if text_density > 0.7:
+                # Very dense content - use overflow-safe textbox
                 self._create_overflow_safe_textbox(slide, slide_data)
             else:
-                # Normal content handling with auto-fit protection
+                # Normal content handling with enhanced formatting
                 if slide_data.content:
                     self._add_enhanced_bullet_points(content_placeholder, slide_data.content)
-                else:
+                elif slide_data.bullets:
                     self._add_simple_bullet_points(content_placeholder, slide_data.bullets)
+                else:
+                    # Handle paragraph-style content
+                    self._add_paragraph_content(content_placeholder, slide_data)
+        else:
+            # Create custom text box if no placeholder available
+            self._create_overflow_safe_textbox(slide, slide_data)
     
     def _create_image_content_layout(self, slide, slide_data: Slide):
-        """Create layout with image and text side by side with overflow protection"""
-        # Adjust content area for text (left side)
+        """Create adaptive layout with image and text side by side with enhanced spacing"""
+        # Calculate optimal layout dimensions based on content
+        text_density = self._calculate_text_density(slide_data)
+        
+        # Adaptive text area sizing based on content volume
+        if text_density > 0.7:  # High density content
+            text_width = Inches(5.2)
+            image_width = Inches(3.3)
+            image_left = Inches(5.7)
+        elif text_density > 0.4:  # Medium density content
+            text_width = Inches(4.8)
+            image_width = Inches(3.7)
+            image_left = Inches(5.3)
+        else:  # Low density content
+            text_width = Inches(4.3)
+            image_width = Inches(4.2)
+            image_left = Inches(4.8)
+        
+        # Create or adjust content area
         content_placeholder = slide.placeholders[1] if len(slide.placeholders) > 1 else None
         
         if content_placeholder:
-            # Resize content area to left side with safe margins
-            content_placeholder.left = Inches(0.5)
-            content_placeholder.width = Inches(4.3)  # Slightly narrower to ensure margin
-            content_placeholder.top = Inches(1.5)
-            content_placeholder.height = Inches(5)
+            # Adaptive content area positioning
+            content_placeholder.left = Inches(0.4)
+            content_placeholder.width = text_width
+            content_placeholder.top = Inches(1.4)
+            content_placeholder.height = Inches(5.2)
             
-            # Check if content is very dense
-            is_dense = self._is_content_dense(slide_data)
+            # Enhanced content handling with adaptive truncation
+            if slide_data.content:
+                self._add_enhanced_bullet_points(content_placeholder, slide_data.content)
+            elif slide_data.bullets:
+                self._add_simple_bullet_points(content_placeholder, slide_data.bullets)
+        else:
+            # Create custom text box if no placeholder available
+            txBox = slide.shapes.add_textbox(Inches(0.4), Inches(1.4), text_width, Inches(5.2))
+            tf = txBox.text_frame
+            tf.word_wrap = True
+            tf.margin_left = Pt(18)
+            tf.margin_right = Pt(18)
+            tf.margin_top = Pt(12)
+            tf.margin_bottom = Pt(12)
             
-            if is_dense:
-                # Create a custom text box for better overflow control
-                txBox = slide.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(4.3), Inches(5))
-                tf = txBox.text_frame
-                tf.word_wrap = True
-                tf.auto_size = 1  # Auto-fit text to shape
-                
-                # Use more aggressive content truncation
-                if slide_data.content:
-                    max_points = min(5, len(slide_data.content))
-                    for i, point in enumerate(slide_data.content[:max_points]):
-                        if i == 0:
-                            p = tf.paragraphs[0]
-                        else:
-                            p = tf.add_paragraph()
-                            
-                        # Extract text with stricter length limits
-                        if hasattr(point, 'text'):
-                            # Add safety check for point.text being string-like
-                            if hasattr(point.text, '__len__'):
-                                text = point.text[:120] + "..." if len(point.text) > 120 else point.text
-                            else:
-                                text = str(point.text)
-                        else:
-                            text = str(point)[:120] + "..." if len(str(point)) > 120 else str(point)
-                        
-                        p.text = text
-                        p.font.size = Pt(14)  # Smaller font for side-by-side with image
-                else:
-                    # Handle simple bullets with truncation
-                    max_bullets = min(6, len(slide_data.bullets or []))
-                    bullets = slide_data.bullets or []
-                    for i, bullet in enumerate(bullets[:max_bullets]):
-                        if i == 0:
-                            p = tf.paragraphs[0]
-                        else:
-                            p = tf.add_paragraph()
-                        
-                        bullet_text = str(bullet)[:120] + "..." if len(str(bullet)) > 120 else str(bullet)
-                        p.text = bullet_text
-                        p.font.size = Pt(14)
-            else:
-                # Normal content handling with existing methods
-                if slide_data.content:
-                    self._add_enhanced_bullet_points(content_placeholder, slide_data.content)
-                else:
-                    self._add_simple_bullet_points(content_placeholder, slide_data.bullets)
+            # Add content with proper formatting
+            if slide_data.content:
+                self._add_enhanced_bullet_points(txBox, slide_data.content)
+            elif slide_data.bullets:
+                self._add_simple_bullet_points(txBox, slide_data.bullets)
         
-        # Add image to right side
+        # Add image with calculated positioning
         image_url = slide_data.image_url or (slide_data.images[0] if slide_data.images else None)
         if image_url:
-            self._add_image_to_slide(slide, image_url, 'right')
+            self._add_image_to_slide(slide, image_url, position='right', 
+                                   custom_pos=(image_left, Inches(1.6), image_width, Inches(4.8)))
     
     def _create_diagram_content_layout(self, slide, slide_data: Slide):
         """Create layout with diagram and minimal text"""
@@ -489,60 +494,116 @@ class PPTBuilder:
         self._add_diagram_to_slide(slide, slide_data)
     
     def _create_mixed_content_layout(self, slide, slide_data: Slide):
-        """Create compact layout with text, image, and diagram"""
-        # Very compact text area
+        """Create enhanced compact layout with text, image, and diagram"""
+        # Calculate optimal layout based on content density
+        text_density = self._calculate_text_density(slide_data)
+        
+        # Adaptive layout dimensions
+        if text_density > 0.6:  # High density - prioritize text space
+            text_width = Inches(4.2)
+            text_height = Inches(2.3)
+            image_size = (Inches(2.5), Inches(1.8))
+            image_pos = (Inches(6.8), Inches(1.6))
+        else:  # Lower density - balanced layout
+            text_width = Inches(3.8)
+            text_height = Inches(2.0)
+            image_size = (Inches(2.8), Inches(2.0))
+            image_pos = (Inches(6.5), Inches(1.6))
+        
+        # Enhanced text area positioning
         content_placeholder = slide.placeholders[1] if len(slide.placeholders) > 1 else None
         
         if content_placeholder:
-            # Compact content area at top left
-            content_placeholder.left = Inches(0.5)
-            content_placeholder.width = Inches(3.5)
-            content_placeholder.top = Inches(1.5)
-            content_placeholder.height = Inches(2)
+            # Optimized content area positioning
+            content_placeholder.left = Inches(0.4)
+            content_placeholder.width = text_width
+            content_placeholder.top = Inches(1.4)
+            content_placeholder.height = text_height
             
-            # Show only first 2 points
-            content = slide_data.content[:2] if slide_data.content else slide_data.bullets[:2]
+            # Selective content based on density
+            if text_density > 0.7:
+                content = slide_data.content[:1] if slide_data.content else slide_data.bullets[:2]
+            else:
+                content = slide_data.content[:2] if slide_data.content else slide_data.bullets[:3]
+                
             if slide_data.content:
                 self._add_enhanced_bullet_points(content_placeholder, content)
             else:
                 self._add_simple_bullet_points(content_placeholder, content)
         
-        # Add small image to top right
+        # Add compact image with calculated positioning
         image_url = slide_data.image_url or (slide_data.images[0] if slide_data.images else None)
         if image_url:
-            self._add_compact_image_to_slide(slide, image_url)
+            self._add_compact_image_to_slide(slide, image_url, custom_pos=(*image_pos, *image_size))
         
-        # Add compact diagram below
-        self._add_compact_diagram_to_slide(slide, slide_data)
+        # Add compact diagram positioned to avoid overlap
+        self._add_compact_diagram_to_slide(slide, slide_data, offset_top=text_height + Inches(0.3))
     
     def _create_conclusion_slide(self, prs, slide_data: Slide):
         """Create conclusion slide"""
         self._create_content_slide(prs, slide_data)  # Same as content slide
     
     def _format_title(self, title_shape):
-        """Format slide title with auto-fit to ensure text stays within bounds"""
-        # Enable auto-fit to prevent overflow
+        """Format slide title with enhanced adaptive sizing and styling"""
         text_frame = title_shape.text_frame
         text_frame.word_wrap = True
         text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        text_frame.margin_left = Pt(12)
+        text_frame.margin_right = Pt(12)
+        text_frame.margin_top = Pt(8)
+        text_frame.margin_bottom = Pt(8)
         
-        # Apply formatting to paragraph
-        title_paragraph = text_frame.paragraphs[0]
-        title_paragraph.font.size = Pt(36)  # Initial size, will auto-decrease if needed
+        # Apply enhanced formatting to paragraph
+        title_paragraph = text_frame.paragraphs[0] 
+        title_text = title_paragraph.text if title_paragraph.text else ""
+        
+        # Adaptive font sizing based on title length
+        if len(title_text) > 80:
+            font_size = 28  # Very long titles
+        elif len(title_text) > 50:
+            font_size = 32  # Long titles
+        elif len(title_text) > 30:
+            font_size = 36  # Medium titles  
+        else:
+            font_size = 40  # Short titles
+        
+        title_paragraph.font.size = Pt(font_size)
         title_paragraph.font.bold = True
         title_paragraph.font.color.rgb = self.colors['primary']
+        title_paragraph.alignment = PP_ALIGN.LEFT
+        title_paragraph.line_spacing = 1.1
+        title_paragraph.space_after = Pt(6)
     
     def _add_enhanced_bullet_points(self, content_shape, bullet_points):
         """Add formatted bullet points with enhanced structure and text overflow prevention"""
         text_frame = content_shape.text_frame
         text_frame.clear()
         
-        # Configure text frame to prevent overflow
+        # Enhanced text frame configuration for better formatting
         text_frame.word_wrap = True
         text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        text_frame.margin_left = Pt(18)
+        text_frame.margin_right = Pt(18) 
+        text_frame.margin_top = Pt(12)
+        text_frame.margin_bottom = Pt(12)
         
-        # Calculate how many points we can fit safely
-        max_points = min(7, len(bullet_points))  # Limit total points if excessive
+        # Calculate adaptive maximum points based on content complexity
+        total_text_length = sum(len(str(point.get('text', str(point)) if isinstance(point, dict) else 
+                                   getattr(point, 'text', str(point)))) for point in bullet_points)
+        
+        # Adaptive content limits based on total text volume
+        if total_text_length > 2000:
+            max_points = 4  # Very dense content
+            max_sub_points = 1
+        elif total_text_length > 1200:
+            max_points = 5  # Dense content
+            max_sub_points = 2
+        elif total_text_length > 600:
+            max_points = 6  # Medium content
+            max_sub_points = 3
+        else:
+            max_points = 7  # Light content
+            max_sub_points = 4
         
         for i, point in enumerate(bullet_points[:max_points]):
             if isinstance(point, dict):
@@ -560,9 +621,14 @@ class PPTBuilder:
                 sub_points = []
                 level = 0
             
-            # Ensure text doesn't overflow
-            if len(main_text) > 200:  # Truncate extremely long bullet points
-                main_text = main_text[:197] + "..."
+            # Adaptive text truncation based on position and level
+            if level == 0:
+                max_length = 180 if i < 3 else 120  # First 3 points get more space
+            else:
+                max_length = 100
+                
+            if len(main_text) > max_length:
+                main_text = main_text[:max_length-3] + "..."
                 
             # Add main bullet point
             if i == 0:
@@ -574,88 +640,205 @@ class PPTBuilder:
             p.level = level
             self._format_bullet_point(p, level)
             
-            # Limit sub-points if there are too many
-            max_sub_points = min(3, len(sub_points))  # Limit sub-points per point
-            
-            # Add sub-points
-            for j, sub_point in enumerate(sub_points[:max_sub_points]):
-                sub_text = str(sub_point)
-                if len(sub_text) > 150:  # Truncate long sub-points
-                    sub_text = sub_text[:147] + "..."
-                
-                sub_p = text_frame.add_paragraph()
-                sub_p.text = sub_text
-                sub_p.level = level + 1
-                self._format_bullet_point(sub_p, level + 1)
-                
-        # Add ellipsis if we truncated the list
+            # Add sub-points with improved formatting
+            if sub_points and level < 2:  # Limit nesting depth
+                for j, sub_point in enumerate(sub_points[:max_sub_points]):
+                    sub_text = str(sub_point)
+                    
+                    # Progressive truncation for sub-points
+                    sub_max_length = max(80 - (j * 10), 40)  # Shorter for later sub-points
+                    if len(sub_text) > sub_max_length:
+                        sub_text = sub_text[:sub_max_length-3] + "..."
+                    
+                    sub_p = text_frame.add_paragraph()
+                    sub_p.text = sub_text
+                    sub_p.level = level + 1
+                    self._format_bullet_point(sub_p, level + 1)
+                    
+        # Add content summary indicator if truncated
         if len(bullet_points) > max_points:
             p = text_frame.add_paragraph()
-            p.text = "..."
+            remaining = len(bullet_points) - max_points
+            p.text = f"... and {remaining} more point{'s' if remaining > 1 else ''}"
             p.level = 0
-            self._format_bullet_point(p, 0)
+            p.font.italic = True
+            p.font.size = Pt(12)
+            p.font.color.rgb = self.colors['light_text']
     
     def _add_simple_bullet_points(self, content_shape, bullets):
-        """Add simple bullet points with auto-fit to prevent text overflow"""
+        """Add simple bullet points with enhanced auto-fit and adaptive formatting"""
         text_frame = content_shape.text_frame
         text_frame.clear()
         
-        # Configure text frame to prevent overflow
+        # Enhanced text frame configuration
         text_frame.word_wrap = True
         text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        text_frame.margin_left = Pt(18)
+        text_frame.margin_right = Pt(18)
+        text_frame.margin_top = Pt(12)
+        text_frame.margin_bottom = Pt(12)
         
-        for i, bullet in enumerate(bullets):
+        # Calculate total content length for adaptive limits
+        total_length = sum(len(str(bullet)) for bullet in bullets)
+        
+        # Adaptive bullet limits based on total content
+        if total_length > 1500:
+            max_bullets = 4
+            max_length_per_bullet = 120
+        elif total_length > 1000:
+            max_bullets = 5
+            max_length_per_bullet = 150
+        elif total_length > 600:
+            max_bullets = 6
+            max_length_per_bullet = 180
+        else:
+            max_bullets = 8
+            max_length_per_bullet = 220
+        
+        for i, bullet in enumerate(bullets[:max_bullets]):
             if i == 0:
                 p = text_frame.paragraphs[0]
             else:
                 p = text_frame.add_paragraph()
             
-            # Ensure text doesn't overflow by setting max length if extremely long
+            # Adaptive text truncation
             bullet_text = str(bullet)
-            if len(bullet_text) > 300:  # Extremely long text might still cause issues
-                bullet_text = bullet_text[:297] + "..."
+            if len(bullet_text) > max_length_per_bullet:
+                bullet_text = bullet_text[:max_length_per_bullet-3] + "..."
                 
             p.text = bullet_text
             p.level = 0
             self._format_bullet_point(p, 0)
+        
+        # Add summary if content was truncated
+        if len(bullets) > max_bullets:
+            p = text_frame.add_paragraph()
+            remaining = len(bullets) - max_bullets
+            p.text = f"... plus {remaining} additional point{'s' if remaining > 1 else ''}"
+            p.font.italic = True
+            p.font.size = Pt(12)
+            p.font.color.rgb = self.colors['light_text']
+    
+    def _add_paragraph_content(self, content_shape, slide_data: Slide):
+        """Add paragraph-style content with enhanced formatting for better readability"""
+        text_frame = content_shape.text_frame
+        text_frame.clear()
+        
+        # Enhanced text frame configuration
+        text_frame.word_wrap = True
+        text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        text_frame.margin_left = Pt(20)
+        text_frame.margin_right = Pt(20)
+        text_frame.margin_top = Pt(15)
+        text_frame.margin_bottom = Pt(15)
+        
+        # Handle different content types as paragraphs
+        content_text = ""
+        if hasattr(slide_data, 'description') and slide_data.description:
+            content_text = slide_data.description
+        elif slide_data.content and isinstance(slide_data.content, str):
+            content_text = slide_data.content
+        elif slide_data.bullets and len(slide_data.bullets) == 1:
+            content_text = slide_data.bullets[0]
+        
+        if content_text:
+            # Split long content into paragraphs for better readability
+            paragraphs = self._split_into_paragraphs(content_text)
+            
+            for i, para_text in enumerate(paragraphs[:3]):  # Limit to 3 paragraphs
+                if i == 0:
+                    p = text_frame.paragraphs[0]
+                else:
+                    p = text_frame.add_paragraph()
+                
+                p.text = para_text
+                p.font.size = Pt(18)
+                p.font.color.rgb = self.colors['text']
+                p.alignment = PP_ALIGN.LEFT
+                p.line_spacing = 1.3
+                p.space_after = Pt(12)  # Space between paragraphs
+                
+                # First paragraph slightly larger
+                if i == 0:
+                    p.font.size = Pt(20)
+                    p.font.bold = True
+    
+    def _split_into_paragraphs(self, text: str) -> list:
+        """Split long text into readable paragraphs"""
+        # Split by common paragraph indicators
+        sentences = text.replace('. ', '.|').replace('? ', '?|').replace('! ', '!|').split('|')
+        paragraphs = []
+        current_para = ""
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # If adding this sentence would make paragraph too long, start new one
+            if len(current_para) + len(sentence) > 300 and current_para:
+                paragraphs.append(current_para.strip())
+                current_para = sentence
+            else:
+                current_para += (" " + sentence) if current_para else sentence
+        
+        # Add final paragraph
+        if current_para.strip():
+            paragraphs.append(current_para.strip())
+        
+        return paragraphs
     
     def _format_bullet_point(self, paragraph, level=0):
-        """Format individual bullet point with adaptive sizing"""
-        # Base font sizes for different levels
-        base_font_sizes = [20, 18, 16]  # Different sizes for different levels
-        colors = [self.colors['text'], self.colors['light_text'], self.colors['light_text']]
+        """Format individual bullet point with adaptive sizing and proper spacing"""
+        # Enhanced base font sizes for different levels
+        base_font_sizes = [18, 16, 14, 12]  # More granular sizing
+        colors = [self.colors['text'], self.colors['light_text'], self.colors['light_text'], self.colors['light_text']]
         
         # Adjust font size based on text length for better fitting
         text_length = len(paragraph.text)
         
-        # Calculate adaptive font size (reduce for longer text)
+        # Calculate adaptive font size with improved scaling
         level_idx = min(level, len(base_font_sizes) - 1)
         base_size = base_font_sizes[level_idx]
         
-        # Adaptive sizing based on content length
-        if text_length > 150:
-            font_size = max(base_size - 4, 12)  # Minimum 12pt
+        # More sophisticated adaptive sizing
+        if text_length > 200:
+            font_size = max(base_size - 6, 10)  # Very long text
+        elif text_length > 150:
+            font_size = max(base_size - 4, 12)  # Long text
         elif text_length > 100:
-            font_size = max(base_size - 2, 14)  # Minimum 14pt
+            font_size = max(base_size - 2, 14)  # Medium text
+        elif text_length > 50:
+            font_size = max(base_size - 1, 16)  # Short-medium text
         else:
-            font_size = base_size
+            font_size = base_size  # Short text
             
-        # Enable word wrap for the paragraph
+        # Enhanced paragraph formatting
         paragraph.alignment = PP_ALIGN.LEFT
+        paragraph.font.size = Pt(font_size)
+        paragraph.font.color.rgb = colors[min(level, len(colors) - 1)]
         
-        paragraph.font.size = Pt(font_size)  # Use our calculated adaptive font size
-        paragraph.font.color.rgb = colors[min(level, 2)]
+        # Improved spacing and formatting
+        paragraph.space_before = Pt(3)  # Space before paragraph
+        paragraph.space_after = Pt(6) if level == 0 else Pt(3)  # More space after main points
+        paragraph.line_spacing = 1.2  # Better line spacing
         
-        # Bold for main points
+        # Enhanced text formatting based on level
         if level == 0:
             paragraph.font.bold = True
+        elif level == 1:
+            paragraph.font.italic = True  # Italics for sub-points
+        
+        # Add proper indentation
+        paragraph.left_indent = Inches(0.25 * level)  # Progressive indentation
     
-    def _is_content_dense(self, slide_data: Slide) -> bool:
-        """Determine if slide content is very dense and needs special handling"""
-        # Calculate total text length
-        total_length = len(slide_data.title)
+    def _calculate_text_density(self, slide_data: Slide) -> float:
+        """Calculate text density ratio for adaptive layout decisions"""
+        total_length = len(slide_data.title) if slide_data.title else 0
+        content_items = 0
         
         if slide_data.content:
+            content_items = len(slide_data.content)
             for point in slide_data.content:
                 if hasattr(point, 'text'):
                     if hasattr(point.text, '__len__'):
@@ -663,15 +846,28 @@ class PPTBuilder:
                     else:
                         total_length += len(str(point.text))
                     if hasattr(point, 'sub_points') and point.sub_points:
+                        content_items += len(point.sub_points)
                         for sub in point.sub_points:
                             total_length += len(str(sub))
                 else:
                     total_length += len(str(point))
         elif slide_data.bullets:
-            total_length += sum(len(bullet) for bullet in slide_data.bullets)
+            content_items = len(slide_data.bullets)
+            total_length += sum(len(str(bullet)) for bullet in slide_data.bullets)
         
-        # Dense threshold - more than 500 chars is considered very dense
-        return total_length > 500 or (slide_data.content and len(slide_data.content) > 8)
+        # Calculate density ratio (0-1 scale)
+        # Base calculation on both text length and number of items
+        length_factor = min(total_length / 1000, 1.0)  # Normalize to 1000 chars
+        items_factor = min(content_items / 10, 1.0)    # Normalize to 10 items
+        
+        # Weighted average (text length weighted more heavily)
+        density = (length_factor * 0.7) + (items_factor * 0.3)
+        return min(density, 1.0)
+    
+    def _is_content_dense(self, slide_data: Slide) -> bool:
+        """Determine if slide content is very dense and needs special handling"""
+        density = self._calculate_text_density(slide_data)
+        return density > 0.6  # Threshold for dense content
     
     def _create_overflow_safe_textbox(self, slide, slide_data: Slide):
         """Create a custom text box that ensures content never overflows slide boundaries"""
@@ -767,8 +963,8 @@ class PPTBuilder:
                 p.font.italic = True
                 p.font.size = Pt(12)
     
-    def _add_image_to_slide(self, slide, image_url, position='right'):
-        """Add image to slide with proper positioning"""
+    def _add_image_to_slide(self, slide, image_url, position='right', custom_pos=None):
+        """Add image to slide with enhanced positioning and adaptive sizing"""
         try:
             # Download image
             response = requests.get(image_url, timeout=10)
@@ -776,89 +972,165 @@ class PPTBuilder:
             
             image_stream = BytesIO(response.content)
             
-            # Position calculations - avoid overlap with text
-            if position == 'right':
-                left = Inches(5.5)  # Move further right
-                top = Inches(1.8)   # Below title
-                width = Inches(3.8)
-                height = Inches(4.5)
-            elif position == 'center':
-                left = Inches(2.5)
-                top = Inches(4)     # Below text content
-                width = Inches(5)
-                height = Inches(3)
-            else:  # left
-                left = Inches(0.3)
-                top = Inches(1.8)
-                width = Inches(3.8)
-                height = Inches(4.5)
+            # Calculate position with custom positioning support
+            if custom_pos:
+                left, top, width, height = custom_pos
+            else:
+                # Default position calculations with improved spacing
+                if position == 'right':
+                    left = Inches(5.6)  # Slightly more right for better spacing
+                    top = Inches(1.6)   # Slightly higher
+                    width = Inches(3.9)
+                    height = Inches(4.8)
+                elif position == 'center':
+                    left = Inches(2.8)
+                    top = Inches(4.2)   # Below text content with more margin
+                    width = Inches(4.4)
+                    height = Inches(2.8)
+                else:  # left
+                    left = Inches(0.2)
+                    top = Inches(1.6)
+                    width = Inches(3.9)
+                    height = Inches(4.8)
             
-            # Add image
+            # Validate image dimensions to prevent off-slide placement
+            slide_width = Inches(10)
+            slide_height = Inches(7.5)
+            
+            if left + width > slide_width:
+                width = slide_width - left - Inches(0.1)  # Leave small margin
+            if top + height > slide_height:
+                height = slide_height - top - Inches(0.1)  # Leave small margin
+            
+            # Add image with validated dimensions
             slide.shapes.add_picture(image_stream, left, top, width, height)
             
         except Exception as e:
             logger.error(f"Failed to add image: {e}")
-            # Add placeholder text instead
-            self._add_image_placeholder(slide, position)
+            # Add placeholder with same positioning logic
+            if custom_pos:
+                self._add_image_placeholder(slide, position, custom_pos)
+            else:
+                self._add_image_placeholder(slide, position)
     
-    def _add_compact_image_to_slide(self, slide, image_url):
-        """Add smaller image for mixed layouts"""
+    def _add_compact_image_to_slide(self, slide, image_url, custom_pos=None):
+        """Add smaller image for mixed layouts with enhanced positioning"""
         try:
             response = requests.get(image_url, timeout=10)
             response.raise_for_status()
             
             image_stream = BytesIO(response.content)
             
-            # Compact image position
-            left = Inches(4.5)
-            top = Inches(1.8)
-            width = Inches(2.8)
-            height = Inches(2)
+            # Use custom positioning if provided, otherwise default
+            if custom_pos:
+                left, top, width, height = custom_pos
+            else:
+                left = Inches(6.5)  # Adjusted for better spacing
+                top = Inches(1.6)
+                width = Inches(2.8)
+                height = Inches(2.0)
+            
+            # Validate dimensions to prevent overflow
+            slide_width = Inches(10)
+            slide_height = Inches(7.5)
+            
+            if left + width > slide_width:
+                width = slide_width - left - Inches(0.1)
+            if top + height > slide_height:
+                height = slide_height - top - Inches(0.1)
             
             slide.shapes.add_picture(image_stream, left, top, width, height)
             
         except Exception as e:
             logger.error(f"Failed to add compact image: {e}")
-            self._add_compact_image_placeholder(slide)
+            if custom_pos:
+                self._add_compact_image_placeholder(slide, custom_pos)
+            else:
+                self._add_compact_image_placeholder(slide)
     
-    def _add_compact_image_placeholder(self, slide):
-        """Add compact image placeholder"""
-        left, top, width, height = Inches(4.5), Inches(1.8), Inches(2.8), Inches(2)
+    def _add_compact_image_placeholder(self, slide, custom_pos=None):
+        """Add compact image placeholder with enhanced styling"""
+        if custom_pos:
+            left, top, width, height = custom_pos
+        else:
+            left, top, width, height = Inches(6.5), Inches(1.6), Inches(2.8), Inches(2.0)
+        
+        # Validate dimensions
+        slide_width = Inches(10)
+        slide_height = Inches(7.5)
+        
+        if left + width > slide_width:
+            width = slide_width - left - Inches(0.1)
+        if top + height > slide_height:
+            height = slide_height - top - Inches(0.1)
         
         shape = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE, left, top, width, height
         )
         shape.fill.solid()
-        shape.fill.fore_color.rgb = RGBColor(240, 240, 240)
-        shape.line.color.rgb = RGBColor(200, 200, 200)
+        shape.fill.fore_color.rgb = RGBColor(248, 249, 250)
+        shape.line.color.rgb = RGBColor(206, 212, 218)
+        shape.line.width = Pt(1)
         
         text_frame = shape.text_frame
-        text_frame.text = "Image"
-        paragraph = text_frame.paragraphs[0]
-        paragraph.alignment = PP_ALIGN.CENTER
-        paragraph.font.size = Pt(12)
-        paragraph.font.color.rgb = RGBColor(100, 100, 100)
+        text_frame.text = "🖼️\nImage"
+        text_frame.margin_left = Pt(8)
+        text_frame.margin_right = Pt(8)
+        text_frame.margin_top = Pt(8)
+        text_frame.margin_bottom = Pt(8)
+        
+        for paragraph in text_frame.paragraphs:
+            paragraph.alignment = PP_ALIGN.CENTER
+            paragraph.font.size = Pt(10)
+            paragraph.font.color.rgb = RGBColor(108, 117, 125)
+        
         text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
     
-    def _add_image_placeholder(self, slide, position='right'):
-        """Add image placeholder when image fails to load"""
-        if position == 'right':
-            left, top, width, height = Inches(5.5), Inches(1.8), Inches(3.8), Inches(4.5)
-        elif position == 'center':
-            left, top, width, height = Inches(2.5), Inches(4), Inches(5), Inches(3)
-        else:  # left
-            left, top, width, height = Inches(0.3), Inches(1.8), Inches(3.8), Inches(4.5)
+    def _add_image_placeholder(self, slide, position='right', custom_pos=None):
+        """Add enhanced image placeholder when image fails to load"""
+        if custom_pos:
+            left, top, width, height = custom_pos
+        else:
+            if position == 'right':
+                left, top, width, height = Inches(5.6), Inches(1.6), Inches(3.9), Inches(4.8)
+            elif position == 'center':
+                left, top, width, height = Inches(2.8), Inches(4.2), Inches(4.4), Inches(2.8)
+            else:  # left
+                left, top, width, height = Inches(0.2), Inches(1.6), Inches(3.9), Inches(4.8)
         
-        # Add rectangle shape as placeholder
+        # Validate placeholder dimensions
+        slide_width = Inches(10)
+        slide_height = Inches(7.5)
+        
+        if left + width > slide_width:
+            width = slide_width - left - Inches(0.1)
+        if top + height > slide_height:
+            height = slide_height - top - Inches(0.1)
+        
+        # Create enhanced placeholder
         shape = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE, left, top, width, height
         )
         shape.fill.solid()
-        shape.fill.fore_color.rgb = RGBColor(240, 240, 240)
-        shape.line.color.rgb = RGBColor(200, 200, 200)
+        shape.fill.fore_color.rgb = RGBColor(248, 249, 250)  # Light gray
+        shape.line.color.rgb = RGBColor(206, 212, 218)  # Darker border
+        shape.line.width = Pt(1.5)
         
-        # Add "Image" text
+        # Add enhanced placeholder text with icon-like appearance
         text_frame = shape.text_frame
+        text_frame.text = "🖼️\nImage Placeholder"
+        text_frame.margin_left = Pt(12)
+        text_frame.margin_right = Pt(12)
+        text_frame.margin_top = Pt(12)
+        text_frame.margin_bottom = Pt(12)
+        
+        # Format text
+        for paragraph in text_frame.paragraphs:
+            paragraph.alignment = PP_ALIGN.CENTER
+            paragraph.font.size = Pt(14) if width > Inches(3) else Pt(12)
+            paragraph.font.color.rgb = RGBColor(108, 117, 125)  # Medium gray
+        
+        text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
         text_frame.text = "Image Placeholder"
         paragraph = text_frame.paragraphs[0]
         paragraph.alignment = PP_ALIGN.CENTER
@@ -879,106 +1151,192 @@ class PPTBuilder:
             self._create_hierarchy_diagram(slide, diagram_data)
     
     def _create_process_diagram(self, slide, steps):
-        """Create process flow diagram with proper sizing"""
+        """Create enhanced process flow diagram with adaptive sizing and positioning"""
         if not steps:
             return
         
-        # Calculate diagram dimensions based on slide size (10" x 7.5")
-        max_steps_per_row = min(len(steps), 4)  # Max 4 steps per row
-        step_width = Inches(1.8)
-        step_height = Inches(0.7)
-        arrow_width = Inches(0.4)
+        # Enhanced diagram dimensions with better spacing
+        max_steps_per_row = min(len(steps), 4)  # Limit for better visibility
         
-        # Calculate total width and ensure it fits
+        # Adaptive sizing based on number of steps and content density
+        if max_steps_per_row <= 2:
+            step_width = Inches(2.2)
+            step_height = Inches(0.9)
+            arrow_width = Inches(0.6)
+        elif max_steps_per_row == 3:
+            step_width = Inches(2.0)
+            step_height = Inches(0.8)
+            arrow_width = Inches(0.5)
+        else:  # 4 steps
+            step_width = Inches(1.7)
+            step_height = Inches(0.7)
+            arrow_width = Inches(0.4)
+        
+        # Calculate total width with improved spacing
         total_width = max_steps_per_row * step_width + (max_steps_per_row - 1) * arrow_width
-        if total_width > Inches(9):  # Slide content area is ~9 inches
-            # Reduce step width if too wide
-            step_width = Inches(1.4)
-            arrow_width = Inches(0.3)
-            total_width = max_steps_per_row * step_width + (max_steps_per_row - 1) * arrow_width
         
-        # Center the diagram horizontally
+        # Ensure diagram fits within slide boundaries
+        slide_content_width = Inches(9.2)  # Leave margins
+        if total_width > slide_content_width:
+            # Proportionally reduce dimensions
+            scale_factor = slide_content_width / total_width
+            step_width = step_width * scale_factor
+            arrow_width = arrow_width * scale_factor
+            total_width = slide_content_width
+        
+        # Center the diagram horizontally with proper margins
         start_left = (Inches(10) - total_width) / 2
-        top = Inches(4)  # Position below text content
+        top = Inches(4.3)  # Position with adequate spacing below text
         
-        for i, step in enumerate(steps[:max_steps_per_row]):  # Limit to max steps
+        for i, step in enumerate(steps[:max_steps_per_row]):
             # Calculate position
             left = start_left + i * (step_width + arrow_width)
             
-            # Add step box
+            # Create step box with enhanced styling
             shape = slide.shapes.add_shape(
                 MSO_SHAPE.RECTANGLE, left, top, step_width, step_height
             )
             shape.fill.solid()
             shape.fill.fore_color.rgb = self.colors['secondary']
             shape.line.color.rgb = self.colors['primary']
-            shape.line.width = Pt(1)
+            shape.line.width = Pt(2)
             
-            # Add step text
+            # Add rounded corners effect with shadow-like border
+            shape.shadow.inherit = False
+            shape.shadow.style = 1  # Outer shadow
+            shape.shadow.blur_radius = Pt(3)
+            shape.shadow.distance = Pt(2)
+            shape.shadow.color.rgb = RGBColor(0, 0, 0)
+            shape.shadow.transparency = 0.3
+            
+            # Enhanced text formatting
             text_frame = shape.text_frame
-            text_frame.margin_left = Pt(6)
-            text_frame.margin_right = Pt(6)
+            text_frame.margin_left = Pt(8)
+            text_frame.margin_right = Pt(8)
             text_frame.margin_top = Pt(6)
             text_frame.margin_bottom = Pt(6)
+            text_frame.word_wrap = True
             
+            # Adaptive text handling
             step_text = step.get('step', str(step)) if isinstance(step, dict) else str(step)
-            # Truncate long text
-            if len(step_text) > 15:
-                step_text = step_text[:12] + "..."
+            
+            # Intelligent text truncation based on step box size
+            max_chars = int(step_width.inches * 12)  # Approximate chars per inch
+            if len(step_text) > max_chars:
+                step_text = step_text[:max_chars-3] + "..."
             
             text_frame.text = step_text
             paragraph = text_frame.paragraphs[0]
             paragraph.alignment = PP_ALIGN.CENTER
-            paragraph.font.size = Pt(10)
+            paragraph.font.size = Pt(11) if step_width >= Inches(1.8) else Pt(10)
             paragraph.font.color.rgb = RGBColor(255, 255, 255)
             paragraph.font.bold = True
+            paragraph.line_spacing = 1.1
             text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
             
-            # Add arrow (except for last step)
+            # Add enhanced arrow between steps
             if i < min(len(steps), max_steps_per_row) - 1:
                 arrow_left = left + step_width
+                arrow_top = top + (step_height - Inches(0.3)) / 2  # Center vertically
+                
                 arrow_shape = slide.shapes.add_shape(
-                    MSO_SHAPE.RIGHT_ARROW, arrow_left, top + Inches(0.2), 
+                    MSO_SHAPE.RIGHT_ARROW, arrow_left, arrow_top, 
                     arrow_width, Inches(0.3)
                 )
                 arrow_shape.fill.solid()
                 arrow_shape.fill.fore_color.rgb = self.colors['accent']
-                arrow_shape.line.color.rgb = self.colors['accent']
+                arrow_shape.line.color.rgb = self.colors['primary']
+                arrow_shape.line.width = Pt(1)
         
-        # Add "..." if there are more steps
+        # Add continuation indicator if there are more steps
         if len(steps) > max_steps_per_row:
-            dots_left = start_left + max_steps_per_row * (step_width + arrow_width)
-            dots_shape = slide.shapes.add_textbox(
-                dots_left, top + Inches(0.25), Inches(0.5), Inches(0.2)
+            remaining_steps = len(steps) - max_steps_per_row
+            indicator_left = start_left + max_steps_per_row * (step_width + arrow_width) - arrow_width
+            indicator_shape = slide.shapes.add_textbox(
+                indicator_left, top + step_height + Inches(0.1), Inches(1), Inches(0.3)
             )
-            dots_frame = dots_shape.text_frame
-            dots_frame.text = "..."
-            dots_frame.paragraphs[0].font.size = Pt(14)
-            dots_frame.paragraphs[0].font.bold = True
-            dots_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+            indicator_frame = indicator_shape.text_frame
+            indicator_frame.text = f"... +{remaining_steps} more"
+            indicator_frame.paragraphs[0].font.size = Pt(10)
+            indicator_frame.paragraphs[0].font.italic = True
+            indicator_frame.paragraphs[0].font.color.rgb = self.colors['light_text']
+            indicator_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
     
-    def _add_compact_diagram_to_slide(self, slide, slide_data: Slide):
-        """Add compact diagram for mixed layouts"""
+    def _add_compact_diagram_to_slide(self, slide, slide_data: Slide, offset_top=None):
+        """Add compact diagram for mixed layouts with positioning control"""
         diagram_type = slide_data.diagram_type
         diagram_data = slide_data.diagram_data or []
         
+        # Calculate diagram position with offset support
+        base_top = Inches(4.2)
+        if offset_top:
+            diagram_top = Inches(1.4) + offset_top
+        else:
+            diagram_top = base_top
+        
         if diagram_type == 'process':
-            self._create_compact_process_diagram(slide, diagram_data)
+            self._create_compact_process_diagram(slide, diagram_data, diagram_top)
         elif diagram_type == 'comparison':
-            self._create_compact_comparison_diagram(slide, diagram_data)
+            self._create_compact_comparison_diagram(slide, diagram_data, diagram_top)
     
-    def _create_compact_process_diagram(self, slide, steps):
-        """Create compact process diagram for mixed layouts"""
+    def _create_compact_process_diagram(self, slide, steps, top=None):
+        """Create compact process diagram for mixed layouts with positioning control"""
         if not steps:
             return
         
         max_steps = min(len(steps), 3)  # Max 3 steps for compact version
-        step_width = Inches(1.2)
-        step_height = Inches(0.5)
-        arrow_width = Inches(0.3)
+        step_width = Inches(1.3)
+        step_height = Inches(0.6)
+        arrow_width = Inches(0.25)
         
-        start_left = Inches(0.5)
-        top = Inches(4.2)
+        # Calculate total width and center positioning
+        total_width = max_steps * step_width + (max_steps - 1) * arrow_width
+        start_left = (Inches(10) - total_width) / 2
+        diagram_top = top if top else Inches(4.2)
+        
+        for i, step in enumerate(steps[:max_steps]):
+            left = start_left + i * (step_width + arrow_width)
+            
+            # Create step box with enhanced compact styling
+            shape = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, left, diagram_top, step_width, step_height
+            )
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = self.colors['secondary']
+            shape.line.color.rgb = self.colors['primary']
+            shape.line.width = Pt(1.5)
+            
+            # Enhanced text formatting for compact diagrams
+            text_frame = shape.text_frame
+            text_frame.margin_left = Pt(4)
+            text_frame.margin_right = Pt(4)
+            text_frame.margin_top = Pt(3)
+            text_frame.margin_bottom = Pt(3)
+            text_frame.word_wrap = True
+            
+            step_text = step.get('step', str(step)) if isinstance(step, dict) else str(step)
+            if len(step_text) > 12:
+                step_text = step_text[:10] + ".."
+            
+            text_frame.text = step_text
+            paragraph = text_frame.paragraphs[0]
+            paragraph.alignment = PP_ALIGN.CENTER
+            paragraph.font.size = Pt(9)
+            paragraph.font.color.rgb = RGBColor(255, 255, 255)
+            paragraph.font.bold = True
+            text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+            
+            # Add arrow between steps
+            if i < max_steps - 1:
+                arrow_left = left + step_width
+                arrow_top = diagram_top + (step_height - Inches(0.2)) / 2
+                arrow_shape = slide.shapes.add_shape(
+                    MSO_SHAPE.RIGHT_ARROW, arrow_left, arrow_top, 
+                    arrow_width, Inches(0.2)
+                )
+                arrow_shape.fill.solid()
+                arrow_shape.fill.fore_color.rgb = self.colors['accent']
+                arrow_shape.line.color.rgb = self.colors['accent']
         
         for i, step in enumerate(steps[:max_steps]):
             left = start_left + i * (step_width + arrow_width)
@@ -1016,104 +1374,170 @@ class PPTBuilder:
                 arrow_shape.fill.fore_color.rgb = self.colors['accent']
     
     def _create_comparison_diagram(self, slide, comparison_data):
-        """Create comparison diagram (two columns) with proper sizing"""
+        """Create enhanced comparison diagram with adaptive sizing and styling"""
         if len(comparison_data) < 2:
             return
         
-        # Box dimensions that fit within slide bounds
-        box_width = Inches(3.5)
-        box_height = Inches(2.5)
-        gap = Inches(0.5)
+        # Enhanced box dimensions with better proportions
+        box_width = Inches(3.8)
+        box_height = Inches(2.8)
+        gap = Inches(0.6)
         
-        # Center the comparison boxes
+        # Center the comparison boxes with proper margins
         total_width = 2 * box_width + gap
         start_left = (Inches(10) - total_width) / 2
-        top = Inches(4)
+        top = Inches(4.2)  # Positioned to avoid text overlap
         
-        # Left column
+        # Left column with enhanced styling
         left_box = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE, start_left, top, box_width, box_height
         )
         left_box.fill.solid()
-        left_box.fill.fore_color.rgb = RGBColor(230, 240, 250)
+        left_box.fill.fore_color.rgb = RGBColor(230, 242, 255)  # Light blue
         left_box.line.color.rgb = self.colors['secondary']
-        left_box.line.width = Pt(2)
+        left_box.line.width = Pt(2.5)
         
+        # Add subtle shadow effect
+        left_box.shadow.inherit = False
+        left_box.shadow.style = 1
+        left_box.shadow.blur_radius = Pt(4)
+        left_box.shadow.distance = Pt(3)
+        left_box.shadow.color.rgb = RGBColor(0, 0, 0)
+        left_box.shadow.transparency = 0.25
+        
+        # Enhanced text formatting for left box
         left_text = left_box.text_frame
-        left_text.margin_left = Pt(12)
-        left_text.margin_right = Pt(12)
-        left_text.margin_top = Pt(12)
-        left_text.margin_bottom = Pt(12)
+        left_text.margin_left = Pt(15)
+        left_text.margin_right = Pt(15)
+        left_text.margin_top = Pt(15)
+        left_text.margin_bottom = Pt(15)
+        left_text.word_wrap = True
         
+        # Adaptive text handling
         left_title = comparison_data[0].get('title', 'Option A') if isinstance(comparison_data[0], dict) else str(comparison_data[0])
-        # Truncate long titles
-        if len(left_title) > 50:
-            left_title = left_title[:47] + "..."
+        if len(left_title) > 60:
+            left_title = left_title[:57] + "..."
         
         left_text.text = left_title
         self._format_comparison_text(left_text)
         
-        # Right column
+        # Right column with complementary styling
         right_box = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE, start_left + box_width + gap, top, box_width, box_height
         )
         right_box.fill.solid()
-        right_box.fill.fore_color.rgb = RGBColor(250, 240, 230)
+        right_box.fill.fore_color.rgb = RGBColor(255, 242, 230)  # Light orange
         right_box.line.color.rgb = self.colors['accent']
-        right_box.line.width = Pt(2)
+        right_box.line.width = Pt(2.5)
         
+        # Add shadow effect to right box
+        right_box.shadow.inherit = False
+        right_box.shadow.style = 1
+        right_box.shadow.blur_radius = Pt(4)
+        right_box.shadow.distance = Pt(3)
+        right_box.shadow.color.rgb = RGBColor(0, 0, 0)
+        right_box.shadow.transparency = 0.25
+        
+        # Enhanced text formatting for right box
         right_text = right_box.text_frame
-        right_text.margin_left = Pt(12)
-        right_text.margin_right = Pt(12)
-        right_text.margin_top = Pt(12)
-        right_text.margin_bottom = Pt(12)
+        right_text.margin_left = Pt(15)
+        right_text.margin_right = Pt(15)
+        right_text.margin_top = Pt(15)
+        right_text.margin_bottom = Pt(15)
+        right_text.word_wrap = True
         
         right_title = comparison_data[1].get('title', 'Option B') if isinstance(comparison_data[1], dict) else str(comparison_data[1])
-        # Truncate long titles
-        if len(right_title) > 50:
-            right_title = right_title[:47] + "..."
+        if len(right_title) > 60:
+            right_title = right_title[:57] + "..."
         
         right_text.text = right_title
         self._format_comparison_text(right_text)
+        
+        # Add connecting element (vs. indicator)
+        vs_left = start_left + box_width + (gap / 2) - Inches(0.25)
+        vs_top = top + (box_height / 2) - Inches(0.15)
+        vs_shape = slide.shapes.add_textbox(vs_left, vs_top, Inches(0.5), Inches(0.3))
+        vs_frame = vs_shape.text_frame
+        vs_frame.text = "VS"
+        vs_paragraph = vs_frame.paragraphs[0]
+        vs_paragraph.alignment = PP_ALIGN.CENTER
+        vs_paragraph.font.size = Pt(12)
+        vs_paragraph.font.bold = True
+        vs_paragraph.font.color.rgb = self.colors['primary']
+        vs_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
     
-    def _create_compact_comparison_diagram(self, slide, comparison_data):
-        """Create compact comparison diagram for mixed layouts"""
+    def _create_compact_comparison_diagram(self, slide, comparison_data, top=None):
+        """Create compact comparison diagram for mixed layouts with positioning control"""
         if len(comparison_data) < 2:
             return
         
-        # Smaller boxes for compact layout
-        box_width = Inches(2.5)
-        box_height = Inches(1.8)
-        gap = Inches(0.3)
+        # Enhanced compact dimensions
+        box_width = Inches(2.8)
+        box_height = Inches(1.6)
+        gap = Inches(0.4)
         
-        start_left = Inches(1)
-        top = Inches(4.5)
+        # Center the boxes horizontally
+        total_width = 2 * box_width + gap
+        start_left = (Inches(10) - total_width) / 2
+        diagram_top = top if top else Inches(4.5)
         
-        # Left column
+        # Left column with enhanced styling
         left_box = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, start_left, top, box_width, box_height
+            MSO_SHAPE.RECTANGLE, start_left, diagram_top, box_width, box_height
         )
         left_box.fill.solid()
-        left_box.fill.fore_color.rgb = RGBColor(230, 240, 250)
+        left_box.fill.fore_color.rgb = RGBColor(230, 242, 255)
         left_box.line.color.rgb = self.colors['secondary']
+        left_box.line.width = Pt(1.5)
         
         left_text = left_box.text_frame
+        left_text.margin_left = Pt(8)
+        left_text.margin_right = Pt(8)
+        left_text.margin_top = Pt(6)
+        left_text.margin_bottom = Pt(6)
+        left_text.word_wrap = True
+        
         left_title = comparison_data[0].get('title', 'Option A') if isinstance(comparison_data[0], dict) else str(comparison_data[0])
-        if len(left_title) > 30:
-            left_title = left_title[:27] + "..."
+        if len(left_title) > 35:
+            left_title = left_title[:32] + "..."
         left_text.text = left_title
         
         paragraph = left_text.paragraphs[0]
         paragraph.alignment = PP_ALIGN.CENTER
-        paragraph.font.size = Pt(12)
+        paragraph.font.size = Pt(11)
         paragraph.font.bold = True
         paragraph.font.color.rgb = self.colors['primary']
+        paragraph.line_spacing = 1.1
         left_text.vertical_anchor = MSO_ANCHOR.MIDDLE
         
-        # Right column
+        # Right column with complementary styling
         right_box = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, start_left + box_width + gap, top, box_width, box_height
+            MSO_SHAPE.RECTANGLE, start_left + box_width + gap, diagram_top, box_width, box_height
         )
+        right_box.fill.solid()
+        right_box.fill.fore_color.rgb = RGBColor(255, 242, 230)
+        right_box.line.color.rgb = self.colors['accent']
+        right_box.line.width = Pt(1.5)
+        
+        right_text = right_box.text_frame
+        right_text.margin_left = Pt(8)
+        right_text.margin_right = Pt(8)
+        right_text.margin_top = Pt(6)
+        right_text.margin_bottom = Pt(6)
+        right_text.word_wrap = True
+        
+        right_title = comparison_data[1].get('title', 'Option B') if isinstance(comparison_data[1], dict) else str(comparison_data[1])
+        if len(right_title) > 35:
+            right_title = right_title[:32] + "..."
+        right_text.text = right_title
+        
+        paragraph = right_text.paragraphs[0]
+        paragraph.alignment = PP_ALIGN.CENTER
+        paragraph.font.size = Pt(11)
+        paragraph.font.bold = True
+        paragraph.font.color.rgb = self.colors['primary']
+        paragraph.line_spacing = 1.1
+        right_text.vertical_anchor = MSO_ANCHOR.MIDDLE
         right_box.fill.solid()
         right_box.fill.fore_color.rgb = RGBColor(250, 240, 230)
         right_box.line.color.rgb = self.colors['accent']
@@ -1219,14 +1643,20 @@ class PPTBuilder:
                 connector.line.width = Pt(2)
     
     def _format_comparison_text(self, text_frame):
-        """Format comparison diagram text with proper sizing"""
+        """Format comparison diagram text with enhanced styling"""
         paragraph = text_frame.paragraphs[0]
         paragraph.alignment = PP_ALIGN.CENTER
-        paragraph.font.size = Pt(14)
+        paragraph.font.size = Pt(15)
         paragraph.font.bold = True
         paragraph.font.color.rgb = self.colors['primary']
+        paragraph.line_spacing = 1.2
+        paragraph.space_before = Pt(3)
+        paragraph.space_after = Pt(3)
+        
+        # Enhanced text frame properties
         text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
         text_frame.word_wrap = True
+        text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
     
     def _add_legacy_diagram(self, slide, diagram_description):
         """Add legacy diagram support"""
