@@ -1,15 +1,11 @@
 from fastapi import APIRouter, HTTPException, Response, Request
-from fastapi.responses import FileResponse
 from services.prompt_engine import PromptEngine
 from services.ppt_builder import PPTBuilder
 from services.slide_schema import Deck
-from utils.file_manager import get_download_path, cleanup_file
 from core.logger import get_logger
 from core.config import settings
-import os
 import uuid
 import threading
-import time
 
 router = APIRouter()
 logger = get_logger("api.routes")
@@ -36,13 +32,10 @@ def job_worker(job_id, topic, username="anonymous", use_template=True, num_slide
             logger.error(f"Deck is empty for topic: {topic}")
         # Pass theme to PPTBuilder
         builder = PPTBuilder(theme=theme)
-        pptx_path = builder.build(deck, use_template=use_template)
-        logger.info(f"PPTX built at: {pptx_path}")
+        pptx_stream = builder.build(deck, use_template=use_template)
+        logger.info(f"PPTX built in memory")
         
-        # Set local download URL
-        local_url = f"/download/{os.path.basename(pptx_path)}"
-        
-        # Try to upload to GoFile if enabled
+        # Upload to GoFile - this is now the primary storage
         online_url = None
         if settings.gofile_enabled:
             try:
@@ -50,26 +43,33 @@ def job_worker(job_id, topic, username="anonymous", use_template=True, num_slide
                 
                 # Create custom filename for GoFile: [username]_[topic_name].pptx
                 custom_filename = create_custom_filename(username, topic)
-                upload_result = gofile_service.upload_file(pptx_path, custom_filename=custom_filename)
+                upload_result = gofile_service.upload_stream(pptx_stream, custom_filename)
                 
                 if upload_result["success"]:
                     online_url = upload_result["download_url"]
                     logger.info(f"Uploaded to GoFile with custom name '{custom_filename}': {online_url}")
                 else:
                     logger.error(f"GoFile upload failed: {upload_result.get('error')}")
+                    raise Exception(f"GoFile upload failed: {upload_result.get('error')}")
             except Exception as upload_err:
                 logger.error(f"Failed to upload to GoFile: {upload_err}")
+                with jobs_lock:
+                    jobs[job_id]["status"] = JobStatus.ERROR
+                    jobs[job_id]["error"] = f"File upload failed: {str(upload_err)}"
+                return
+        else:
+            logger.error("GoFile integration is disabled - cannot store PPTX file")
+            with jobs_lock:
+                jobs[job_id]["status"] = JobStatus.ERROR
+                jobs[job_id]["error"] = "File storage is not configured"
+            return
         
-        # Update job status
+        # Update job status - only online URL now
         with jobs_lock:
             jobs[job_id]["status"] = JobStatus.DONE
-            jobs[job_id]["result"] = pptx_path
-            jobs[job_id]["url"] = local_url
-            if online_url:
-                jobs[job_id]["online_url"] = online_url
+            jobs[job_id]["online_url"] = online_url
         
-        cleanup_file(pptx_path, settings.temp_file_lifetime)
-        logger.info(f"Job {job_id} completed: Local URL: {local_url}, Online URL: {online_url or 'N/A'}")
+        logger.info(f"Job {job_id} completed: Online URL: {online_url}")
     except Exception as e:
         with jobs_lock:
             jobs[job_id]["status"] = JobStatus.ERROR
@@ -120,40 +120,38 @@ async def generate_ppt(request: Request):
             if not deck.slides:
                 logger.error(f"Deck is empty for topic: {topic}")
             builder = PPTBuilder(theme=theme)
-            pptx_path = builder.build(deck, use_template=use_template)
-            logger.info(f"PPTX built at: {pptx_path}")
+            pptx_stream = builder.build(deck, use_template=use_template)
+            logger.info(f"PPTX built in memory")
             
-            # Set local download URL
-            url = f"/download/{os.path.basename(pptx_path)}"
+            # Create response without local download URL
+            response = {
+                "slides": [s.title for s in deck.slides],
+                "username": username,
+                "topic": topic
+            }
             
-            # Try to upload to GoFile if enabled
-            online_url = None
+            # Upload to GoFile if enabled - this is now the primary storage
             if settings.gofile_enabled:
                 try:
                     from services.gofile_service import gofile_service
                     
                     # Create custom filename for GoFile: [username]_[topic_name].pptx
                     custom_filename = create_custom_filename(username, topic)
-                    upload_result = gofile_service.upload_file(pptx_path, custom_filename=custom_filename)
+                    upload_result = gofile_service.upload_stream(pptx_stream, custom_filename)
                     
                     if upload_result["success"]:
                         online_url = upload_result["download_url"]
+                        response["online_url"] = online_url
                         logger.info(f"Uploaded to GoFile with custom name '{custom_filename}': {online_url}")
                     else:
                         logger.error(f"GoFile upload failed: {upload_result.get('error')}")
+                        raise HTTPException(status_code=500, detail=f"File upload failed: {upload_result.get('error')}")
                 except Exception as upload_err:
                     logger.error(f"Failed to upload to GoFile: {upload_err}")
-            
-            cleanup_file(pptx_path, settings.temp_file_lifetime)
-            response = {
-                "url": url, 
-                "slides": [s.title for s in deck.slides],
-                "username": username,
-                "topic": topic
-            }
-            
-            if online_url:
-                response["online_url"] = online_url
+                    raise HTTPException(status_code=500, detail=f"File upload failed: {str(upload_err)}")
+            else:
+                logger.error("GoFile integration is disabled - cannot store PPTX file")
+                raise HTTPException(status_code=500, detail="File storage is not configured")
                 
             return response
         except Exception as e:
@@ -176,19 +174,13 @@ async def generate_ppt(request: Request):
             "theme": theme
         }
         with jobs_lock:
-            jobs[job_id] = {"status": JobStatus.PENDING, "result": None, "url": None, "error": None}
+            jobs[job_id] = {"status": JobStatus.PENDING, "online_url": None, "error": None}
         threading.Thread(target=job_worker, args=(job_id, topic, username, use_template, num_slides, include_images, include_diagrams, theme), daemon=True).start()
         logger.info(f"Enqueued job {job_id} for topic '{topic}' by user '{username}' (use_template={use_template}, num_slides={num_slides})")
         return {
             "job_id": job_id,
             "topic": topic,
             "username": username,
-            "status": JobStatus.PENDING,
-            "debug": debug_info
-        }
-        return {
-            "job_id": job_id,
-            "topic": topic,
             "status": JobStatus.PENDING,
             "debug": debug_info
         }
@@ -202,18 +194,11 @@ def get_status(job_id: str):
             raise HTTPException(status_code=404, detail="Job not found")
         resp = {"status": job["status"]}
         if job["status"] == JobStatus.DONE:
-            resp["url"] = job["url"]
-            # Include online URL if available
+            # Only include online URL now
             if "online_url" in job:
                 resp["online_url"] = job["online_url"]
         if job["status"] == JobStatus.ERROR:
             resp["error"] = job["error"]
     return resp
 
-@router.get("/download/{filename}")
-def download_ppt(filename: str):
-    path = get_download_path(filename)
-    if not os.path.exists(path):
-        logger.error(f"Download requested for missing file: {filename}")
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation", filename=filename)
+

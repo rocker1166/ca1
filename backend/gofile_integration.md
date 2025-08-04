@@ -103,7 +103,7 @@ curl -X POST "http://localhost:8001/generate" \
 
 ### Flow
 
-1. The PPT is generated as before and stored in the local `results` directory
+1. The PPT is generated as before and stored in the local `tmp` directory
 2. If GoFile integration is enabled, the system attempts to upload the file to GoFile.io
 3. If the upload is successful, the online URL is included in the API response
 4. The local file is still subject to cleanup after the configured lifetime

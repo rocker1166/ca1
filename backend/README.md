@@ -108,9 +108,10 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
     "sync": false
   }
   ```
-- `GET /status/{job_id}` — Check job status. Returns status and download URL if ready.
-- `GET /download/{filename}` — Download generated PPTX file.
+- `GET /status/{job_id}` — Check job status. Returns status and online download URL when ready.
 - `GET /health` — Health check.
+
+**Note**: Local file storage has been removed. All PPTX files are now stored online via GoFile.io integration only.
 
 ## Testing
 - Run all tests:

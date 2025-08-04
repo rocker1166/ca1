@@ -2,6 +2,7 @@ import os
 import requests
 import logging
 from typing import Optional, Dict, Any
+from io import BytesIO
 from core.config import settings
 from core.logger import get_logger
 
@@ -128,6 +129,94 @@ class GoFileService:
                 
         except Exception as e:
             logger.error(f"Error uploading file to GoFile: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def upload_stream(self, file_stream: BytesIO, filename: str, folder_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Upload a file stream (BytesIO) to GoFile.io
+        
+        Args:
+            file_stream: BytesIO stream containing the file data
+            filename: Name to use for the uploaded file
+            folder_id: Optional folder ID to upload to (if None, uses default or creates new)
+            
+        Returns:
+            Dict with upload result details including download URL
+        """
+        try:
+            logger.info(f"Uploading stream to GoFile as '{filename}'")
+            
+            # Use the correct upload endpoint
+            upload_url = "https://upload.gofile.io/uploadfile"
+            
+            # Prepare headers with token if available
+            headers = {}
+            if self.api_token:
+                headers["Authorization"] = f"Bearer {self.api_token}"
+                logger.debug("Using API token for authentication")
+            else:
+                logger.warning("No API token configured - using guest upload")
+            
+            # Prepare files and data
+            file_stream.seek(0)  # Ensure we're at the beginning of the stream
+            files = {'file': (filename, file_stream, 'application/vnd.openxmlformats-officedocument.presentationml.presentation')}
+            data = {}
+            
+            # Add folder ID if specified and we have API token
+            if (folder_id or self.folder_id) and self.api_token:
+                target_folder = folder_id or self.folder_id
+                data['folderId'] = target_folder
+                logger.debug(f"Uploading to folder: {target_folder}")
+            elif (folder_id or self.folder_id) and not self.api_token:
+                logger.warning("Cannot upload to specific folder without API token - creating new folder")
+            else:
+                logger.debug("No folder specified - uploading to new folder")
+            
+            logger.debug(f"Upload URL: {upload_url}")
+            logger.debug(f"Data parameters: {data}")
+            
+            # Upload the stream
+            response = requests.post(
+                upload_url,
+                headers=headers if headers else None,
+                files=files,
+                data=data if data else None
+            )
+            
+            # Check if the request was successful
+            if response.status_code == 200:
+                result = response.json()
+                
+                if result.get("status") == "ok":
+                    file_data = result.get("data", {})
+                    download_url = file_data.get("downloadPage", "")
+                    file_id = file_data.get("fileId", "")
+                    
+                    logger.info(f"Stream uploaded successfully. ID: {file_id}, Filename: {filename}")
+                    return {
+                        "success": True,
+                        "file_id": file_id,
+                        "download_url": download_url,
+                        "file_name": filename,
+                        "raw_response": file_data
+                    }
+                else:
+                    error = result.get("status", "Unknown error")
+                    logger.error(f"GoFile stream upload failed: {error}")
+                    return {"success": False, "error": error}
+            else:
+                logger.error(f"GoFile API returned status code: {response.status_code}")
+                logger.error(f"Response headers: {dict(response.headers)}")
+                logger.error(f"Response text: {response.text}")
+                return {
+                    "success": False, 
+                    "error": f"API Error: {response.status_code}",
+                    "response_text": response.text[:500],
+                    "response_headers": dict(response.headers)
+                }
+                
+        except Exception as e:
+            logger.error(f"Error uploading stream to GoFile: {e}")
             return {"success": False, "error": str(e)}
     
     def create_folder(self, parent_folder_id: str, folder_name: str) -> Dict[str, Any]:

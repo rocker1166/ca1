@@ -124,7 +124,7 @@ curl -X POST "http://localhost:8001/generate" \
 
 ### Flow
 
-1. The PPT is generated as before and stored in the local `results` directory
+1. The PPT is generated as before and stored in the local `tmp` directory
 2. A custom filename is created using the format: `[username]_[topic_name].pptx`
 3. If GoFile integration is enabled, the file is uploaded to GoFile.io with the custom filename
 4. If the upload is successful, the online URL is included in the API response

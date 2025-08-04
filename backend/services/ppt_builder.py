@@ -14,10 +14,6 @@ from io import BytesIO
 from PIL import Image
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), '..', 'templates', 'template.pptx')
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'tmp')
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-RESULTS_DIR = os.path.join(os.path.dirname(__file__), '..', 'results')
-os.makedirs(RESULTS_DIR, exist_ok=True)
 logger = get_logger("ppt_builder")
 
 # --- Diagram service stub ---
@@ -147,7 +143,7 @@ class PPTBuilder:
             'body': theme_data['body_font']
         }
 
-    def build(self, deck: Deck, use_template: bool = True) -> str:
+    def build(self, deck: Deck, use_template: bool = True) -> BytesIO:
         try:
             logger.info(f"Building PPTX. use_template={use_template}, slides={len(deck.slides)}")
             
@@ -176,10 +172,12 @@ class PPTBuilder:
                 logger.info(f"Processing slide {i+1}: {slide_data.title} (type: {slide_data.type})")
                 self._create_enhanced_slide(prs, slide_data)
             
-            file_path = os.path.join(RESULTS_DIR, f"{uuid.uuid4()}.pptx")
-            prs.save(file_path)
-            logger.info(f"PPTX generated: {file_path}")
-            return file_path
+            # Save to BytesIO instead of local file
+            pptx_stream = BytesIO()
+            prs.save(pptx_stream)
+            pptx_stream.seek(0)
+            logger.info(f"PPTX generated in memory")
+            return pptx_stream
         except Exception as e:
             logger.error(f"Failed to build PPTX: {e}")
             raise
