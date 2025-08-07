@@ -1,15 +1,72 @@
-# Ignore Python virtual environments in backend
+# Backend - Python virtual environments
 backend/venv/
-    backend/.env
-    backend\.env
+backend/env/
+backend/.venv/
 
-    backend/tmp/
-# Ignore Python cache files
-__pycache__/
+# Backend - Environment files
+backend/.env
+backend/.env.local
+backend/.env.production
+backend/.env.development
+backend/.env.test
+
+# Backend - Python cache files
 backend/__pycache__/
 backend/**/__pycache__/
-
-backend/.env
-backend/.env
 backend/api/__pycache__/
+backend/core/__pycache__/
+backend/services/__pycache__/
+backend/utils/__pycache__/
+backend/tests/__pycache__/
 **/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Backend - Temporary files and directories
+backend/tmp/
+backend/temp/
+backend/test_outputs/
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+backend/.tox/
+
+# Backend - Logs
+backend/logs/
+backend/*.log
+backend/debug.log
+backend/error.log
+backend/app.log
+
+# Backend - Database files
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+
+# Backend - IDE and editor files
+backend/.vscode/
+backend/.idea/
+backend/*.swp
+backend/*.swo
+backend/*~
+
+# Backend - OS generated files
+backend/.DS_Store
+backend/Thumbs.db
+backend/desktop.ini
+
+# Backend - Package management
+backend/dist/
+backend/build/
+backend/*.egg-info/
+backend/.eggs/
+
+# Backend - NLTK data (if needed to be ignored)
+backend/nltk_data/
+
+# Backend - Generated presentations and test files
+backend/generated_presentations/
+backend/test_*.pptx
+backend/*.pptx
